@@ -1,0 +1,68 @@
+From a89a10282dffde44c953e286507ff7cd20522e6b Mon Sep 17 00:00:00 2001
+From: Matthieu Crapet <mcrapet@gmail.com>
+Date: Wed, 14 Jan 2009 13:23:29 +0100
+Subject: [PATCH 02/22] ep93xx_debounce_irq
+
+---
+ arch/arm/mach-ep93xx/core.c              |   18 ++++++++++++++++++
+ arch/arm/mach-ep93xx/include/mach/gpio.h |    2 ++
+ 2 files changed, 20 insertions(+), 0 deletions(-)
+
+diff --git a/arch/arm/mach-ep93xx/core.c b/arch/arm/mach-ep93xx/core.c
+index d6967de..1928c93 100644
+--- a/arch/arm/mach-ep93xx/core.c
++++ b/arch/arm/mach-ep93xx/core.c
+@@ -152,12 +152,14 @@ static unsigned char gpio_int_unmasked[3];
+ static unsigned char gpio_int_enabled[3];
+ static unsigned char gpio_int_type1[3];
+ static unsigned char gpio_int_type2[3];
++static unsigned char gpio_int_debouce[3];
+ 
+ /* Port ordering is: A B F */
+ static const u8 int_type1_register_offset[3]	= { 0x90, 0xac, 0x4c };
+ static const u8 int_type2_register_offset[3]	= { 0x94, 0xb0, 0x50 };
+ static const u8 eoi_register_offset[3]		= { 0x98, 0xb4, 0x54 };
+ static const u8 int_en_register_offset[3]	= { 0x9c, 0xb8, 0x58 };
++static const u8 int_debounce_register_offset[3]	= { 0xa8, 0xc4, 0x64 };
+ 
+ void ep93xx_gpio_update_int_params(unsigned port)
+ {
+@@ -180,6 +182,22 @@ void ep93xx_gpio_int_mask(unsigned line)
+ 	gpio_int_unmasked[line >> 3] &= ~(1 << (line & 7));
+ }
+ 
++void ep93xx_gpio_int_debounce(unsigned int irq, int enable)
++{
++	int line = irq_to_gpio(irq);
++	int port = line >> 3;
++	int port_mask = 1 << (line & 7);
++
++	if (enable)
++		gpio_int_debouce[port] |= port_mask;
++	else
++		gpio_int_debouce[port] &= ~port_mask;
++
++	__raw_writeb(gpio_int_debouce[port],
++		EP93XX_GPIO_REG(int_debounce_register_offset[port]));
++}
++EXPORT_SYMBOL(ep93xx_gpio_int_debounce);
++
+ /*************************************************************************
+  * EP93xx IRQ handling
+  *************************************************************************/
+diff --git a/arch/arm/mach-ep93xx/include/mach/gpio.h b/arch/arm/mach-ep93xx/include/mach/gpio.h
+index f702041..0a1498a 100644
+--- a/arch/arm/mach-ep93xx/include/mach/gpio.h
++++ b/arch/arm/mach-ep93xx/include/mach/gpio.h
+@@ -99,6 +99,8 @@
+ /* maximum value for irq capable line identifiers */
+ #define EP93XX_GPIO_LINE_MAX_IRQ	EP93XX_GPIO_LINE_F(7)
+ 
++extern void ep93xx_gpio_int_debounce(unsigned int irq, int enable);
++
+ /* new generic GPIO API - see Documentation/gpio.txt */
+ 
+ #include <asm-generic/gpio.h>
+-- 
+1.5.6.5
+

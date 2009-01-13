@@ -1,0 +1,82 @@
+Release notes about "linux-2.6.27.4-ts7200_matt-4" patch
+This is mainly created for EP9301 & EP9302 CPUs and more especially for TS-7200, TS-7250 & TS-7260
+SBCs manufactured by Technologic Systems (http://www.embeddedarm.com).
+
+As 2.6.28 is out. This is the last patch release!
+
+Content
+=======
+
+  EP93xx processor
+  ----------------
+  - Ethernet
+  - RTC (no backed up RAM)
+  - I2C (based on gpio)
+  - SPI (master driver)
+  - USB 2.0
+  - Leds (red and green)
+  - /proc/cpuinfo : ep93xx cpu revision & uniq ID
+
+  TS-72xx SBCs
+  ------------
+  - Console LCD text driver (LCD 2x7 header)
+  - Cpufreq driver (configured for ep9301, not tested with ep9302)
+  - Input matrix keypad driver (DIO header)
+  - Watchdog (CPLD of TS-7200)
+  - PATA support: TS-7200 CF
+  - Max197 option (platform driver)
+  - TMP124 spi slave driver
+  - Flash mapping driver for 8mo NOR flash (physmap mapping driver can be used too)
+  - /proc/driver/sbcinfo : some infos about TS-72XX sbc
+
+  PC/104 peripherals
+  -----------------
+  - TS-SER1 support [/dev/ttyS0]
+  - TS-9600: PATA support and legacy IDE support
+  - TS-5620 (RTC daughterboard for TS-7200) support
+  - TS-ETH100 support
+
+
+Notes
+=====
+This patch reuse previous work for kernel 2.6.24.4.
+Motivation was mainly for having generic GPIO layer.
+Memory management is still using ARCH_DISCONTIGMEM_ENABLE. Moving to ARCH_SPARSEMEM_ENABLE is in progress.
+
+Had to fix nearly all drivers with new GPIO API calls and "asm/mach" include paths.
+Individual patches are provided. Cumulative patch is still there.
+
+Warning: Concerning "Floating point emulation"
+  FlastFPE math selection hangs ("Kernel panic - not syncing: Attempted to kill init!")
+  NWFPE math emulation works correctly. Didn't take time to dig that (eabi/oabi stuff?)
+
+For TS-72XX machines, I2C pins are hardcoded to be on DIO 2x8 header: DIO_6 for sda and DIO_7 for scl.
+
+
+ChangeLog
+=========
+linux-2.6.27.4-ts7200_matt-4 (2009.jan.14)
+
+  > Separated "0005-ts72xx_force_machine-id.patch" from "0004-ts72xx_base.patch"
+	* SPI master driver updated : bug fix (thanks to Marco)
+
+linux-2.6.27.4-ts7200_matt-3 (2008.dec.07)
+
+	> This patch (also) applies correctly on vanilla 2.6.27.8 kernel
+	+ Basic Power Management for going to standby state (S3)
+	* TS-7200 NOR flash map driver updated : now deal with CONFIG_MTD_PARTITIONS
+	* SPI master driver updated : uses DIV_ROUND_UP (thanks to Marco)
+
+linux-2.6.27.4-ts7200_matt-2 (2008.nov.29)
+
+	> This patch is 5kb smaller than previous version
+	* LEDs are using generic GPIO layer
+	* I2C is now based on generic GPIO layer
+	* SPI master driver updated by Marco <greywolf82@hotmail.it>
+	  (adds a workqueue, and dynamic frenquency setup)
+	+ New "Netdev" led trigger (monitor network activity)
+	  Written by Oliver Jowett <oliver@opencloud.com>
+
+linux-2.6.27.4-ts7200_matt-1 (2008.nov.15)
+
+	* Initial release

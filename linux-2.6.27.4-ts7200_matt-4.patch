@@ -1,0 +1,5772 @@
+diff --git a/arch/arm/Kconfig b/arch/arm/Kconfig
+index 70dba16..f6259a8 100644
+--- a/arch/arm/Kconfig
++++ b/arch/arm/Kconfig
+@@ -267,6 +267,7 @@ config ARCH_EP93XX
+ 	bool "EP93xx-based"
+ 	select ARM_AMBA
+ 	select ARM_VIC
++	select ARCH_DISCONTIGMEM_ENABLE
+ 	select GENERIC_GPIO
+ 	select HAVE_CLK
+ 	select ARCH_REQUIRE_GPIOLIB
+@@ -832,6 +833,7 @@ config ARCH_SELECT_MEMORY_MODEL
+ 
+ config NODES_SHIFT
+ 	int
++	default "5" if ARCH_EP93XX
+ 	default "4" if ARCH_LH7A40X
+ 	default "2"
+ 	depends on NEED_MULTIPLE_NODES
+@@ -1005,7 +1007,7 @@ config ATAGS_PROC
+ 
+ endmenu
+ 
+-if (ARCH_SA1100 || ARCH_INTEGRATOR || ARCH_OMAP || ARCH_IMX || ARCH_PXA)
++if (ARCH_SA1100 || ARCH_INTEGRATOR || ARCH_OMAP || ARCH_IMX || ARCH_EP93XX || ARCH_PXA)
+ 
+ menu "CPU Frequency scaling"
+ 
+@@ -1041,6 +1043,15 @@ config CPU_FREQ_IMX
+ 
+ 	  If in doubt, say N.
+ 
++config CPU_FREQ_EP93XX
++	tristate "CPUfreq driver for EP93XX CPUs"
++	depends on ARCH_EP93XX && CPU_FREQ
++	default n
++	help
++	  This enables the CPUfreq driver for EP9301 CPUs. Not tested with EP9302.
++
++	  If in doubt, say N.
++
+ config CPU_FREQ_PXA
+ 	bool
+ 	depends on CPU_FREQ && ARCH_PXA && PXA25x
+diff --git a/arch/arm/include/asm/memory.h b/arch/arm/include/asm/memory.h
+index bf7c737..acf566c 100644
+--- a/arch/arm/include/asm/memory.h
++++ b/arch/arm/include/asm/memory.h
+@@ -273,7 +273,8 @@ static inline __deprecated void *bus_to_virt(unsigned long x)
+  * Given a kaddr, ADDR_TO_MAPBASE finds the owning node of the memory
+  * and returns the mem_map of that node.
+  */
+-#define ADDR_TO_MAPBASE(kaddr)	NODE_MEM_MAP(KVADDR_TO_NID(kaddr))
++// Crude hack: see arch/arm/mach-ep93xx/include/mach/memory.h
++//#define ADDR_TO_MAPBASE(kaddr)	NODE_MEM_MAP(KVADDR_TO_NID(kaddr))
+ 
+ /*
+  * Given a page frame number, find the owning node of the memory
+diff --git a/arch/arm/kernel/head.S b/arch/arm/kernel/head.S
+index bff4c6e..aa12619 100644
+--- a/arch/arm/kernel/head.S
++++ b/arch/arm/kernel/head.S
+@@ -83,6 +83,9 @@ ENTRY(stext)
+ 	bl	__lookup_processor_type		@ r5=procinfo r9=cpuid
+ 	movs	r10, r5				@ invalid processor (r5=0)?
+ 	beq	__error_p			@ yes, error 'p'
++#ifdef CONFIG_MACH_TS72XX_FORCE_MACHINEID
++	ldr r1, =0x2a1
++#endif
+ 	bl	__lookup_machine_type		@ r5=machinfo
+ 	movs	r8, r5				@ invalid machine (r5=0)?
+ 	beq	__error_a			@ yes, error 'a'
+diff --git a/arch/arm/kernel/setup.c b/arch/arm/kernel/setup.c
+index 2ca7038..53d3c44 100644
+--- a/arch/arm/kernel/setup.c
++++ b/arch/arm/kernel/setup.c
+@@ -994,9 +994,17 @@ static int c_show(struct seq_file *m, void *v)
+ 	seq_puts(m, "\n");
+ 
+ 	seq_printf(m, "Hardware\t: %s\n", machine_name);
++	#if defined(CONFIG_ARCH_EP93XX)
++	#include <mach/ep93xx-regs.h>
++	seq_printf(m, "Revision\t: %04x\n",
++	      *((unsigned int *)EP93XX_SYSCON_CHIPID) >> 28);
++	seq_printf(m, "Serial\t\t: %016x\n",
++	      *((unsigned int *)EP93XX_SECURITY_UNIQID));
++	#else
+ 	seq_printf(m, "Revision\t: %04x\n", system_rev);
+ 	seq_printf(m, "Serial\t\t: %08x%08x\n",
+ 		   system_serial_high, system_serial_low);
++	#endif
+ 
+ 	return 0;
+ }
+diff --git a/arch/arm/mach-ep93xx/Kconfig b/arch/arm/mach-ep93xx/Kconfig
+index ea8549b..0ee2b29 100644
+--- a/arch/arm/mach-ep93xx/Kconfig
++++ b/arch/arm/mach-ep93xx/Kconfig
+@@ -7,6 +7,15 @@ config CRUNCH
+ 	help
+ 	  Enable kernel support for MaverickCrunch.
+ 
++config CR1_NFBIT
++	bool "Turn on nF bit in ControlRegister 1"
++	help
++	  Say 'Y' here to force the nF bit on.  Usually this is set
++	  by the bootrom.  If it is not set, then the CPU core will
++	  run from HCLK instead of FCLK, and performance will suffer.
++	  If you see BogoMIPS of about 1/4 of your CPU clock, try
++	  turning this on; your performance should double.
++
+ comment "EP93xx Platforms"
+ 
+ config MACH_ADSSPHERE
+@@ -88,6 +97,20 @@ config MACH_TS72XX
+ 	  Say 'Y' here if you want your kernel to support the
+ 	  Technologic Systems TS-72xx board.
+ 
++config MACH_TS72XX_FORCE_MACHINEID
++	bool "Force Machine ID"
++	depends on MACH_TS72XX
++	help
++	  Say 'Y' here to force Machine ID to 0x2A1 (MACH_TYPE_TS72XX legacy value)
++	  In early days Technologic Systems fixed the 0x163 value in redboot.
++
++config MACH_TS72XX_SBCINFO
++	tristate "Add procfs /proc/driver/sbcinfo"
++	depends on MACH_TS72XX
++	help
++	  Say 'Y' to add a procfs entry containing some information
++	  related to Technologic Systems TS-72xx SBC.
++
+ endmenu
+ 
+ endif
+diff --git a/arch/arm/mach-ep93xx/Makefile b/arch/arm/mach-ep93xx/Makefile
+index c1252ca..4b6b542 100644
+--- a/arch/arm/mach-ep93xx/Makefile
++++ b/arch/arm/mach-ep93xx/Makefile
+@@ -6,6 +6,8 @@ obj-m			:=
+ obj-n			:=
+ obj-			:=
+ 
++obj-$(CONFIG_CPU_FREQ_EP93XX)	+= cpufreq.o
++
+ obj-$(CONFIG_MACH_ADSSPHERE)	+= adssphere.o
+ obj-$(CONFIG_MACH_EDB9302)	+= edb9302.o
+ obj-$(CONFIG_MACH_EDB9302A)	+= edb9302a.o
+@@ -16,3 +18,7 @@ obj-$(CONFIG_MACH_EDB9315A)	+= edb9315a.o
+ obj-$(CONFIG_MACH_GESBC9312)	+= gesbc9312.o
+ obj-$(CONFIG_MACH_MICRO9)	+= micro9.o
+ obj-$(CONFIG_MACH_TS72XX)	+= ts72xx.o
++obj-$(CONFIG_MACH_TS72XX_SBCINFO)	+= ts72xx_sbcinfo.o
++
++# Power Management
++obj-$(CONFIG_PM) += pm.o
+diff --git a/arch/arm/mach-ep93xx/clock.c b/arch/arm/mach-ep93xx/clock.c
+index 6062e47..2b47048 100644
+--- a/arch/arm/mach-ep93xx/clock.c
++++ b/arch/arm/mach-ep93xx/clock.c
+@@ -51,7 +51,10 @@ static struct clk clk_usb_host = {
+ 	.enable_reg	= EP93XX_SYSCON_CLOCK_CONTROL,
+ 	.enable_mask	= EP93XX_SYSCON_CLOCK_USH_EN,
+ };
+-
++static struct clk clk_ssp = {
++	.name		= "sspclk",
++	.rate		= 7400000,
++};
+ 
+ static struct clk *clocks[] = {
+ 	&clk_uart,
+@@ -61,6 +64,7 @@ static struct clk *clocks[] = {
+ 	&clk_p,
+ 	&clk_pll2,
+ 	&clk_usb_host,
++	&clk_ssp,
+ };
+ 
+ struct clk *clk_get(struct device *dev, const char *id)
+diff --git a/arch/arm/mach-ep93xx/core.c b/arch/arm/mach-ep93xx/core.c
+index f99f436..00c2316 100644
+--- a/arch/arm/mach-ep93xx/core.c
++++ b/arch/arm/mach-ep93xx/core.c
+@@ -32,11 +32,16 @@
+ #include <linux/termios.h>
+ #include <linux/amba/bus.h>
+ #include <linux/amba/serial.h>
++#include <linux/dma-mapping.h>
++#include <linux/leds.h>
++#include <linux/i2c.h>
++#include <linux/i2c-gpio.h>
+ 
+ #include <asm/types.h>
+ #include <asm/setup.h>
+ #include <asm/memory.h>
+ #include <mach/hardware.h>
++#include <mach/spi.h>
+ #include <asm/irq.h>
+ #include <asm/system.h>
+ #include <asm/tlbflush.h>
+@@ -152,12 +157,14 @@ static unsigned char gpio_int_unmasked[3];
+ static unsigned char gpio_int_enabled[3];
+ static unsigned char gpio_int_type1[3];
+ static unsigned char gpio_int_type2[3];
++static unsigned char gpio_int_debouce[3];
+ 
+ /* Port ordering is: A B F */
+ static const u8 int_type1_register_offset[3]	= { 0x90, 0xac, 0x4c };
+ static const u8 int_type2_register_offset[3]	= { 0x94, 0xb0, 0x50 };
+ static const u8 eoi_register_offset[3]		= { 0x98, 0xb4, 0x54 };
+-static const u8 int_en_register_offset[3]	= { 0x9c, 0xb8, 0x5c };
++static const u8 int_en_register_offset[3]	= { 0x9c, 0xb8, 0x58 };
++static const u8 int_debounce_register_offset[3]	= { 0xa8, 0xc4, 0x64 };
+ 
+ void ep93xx_gpio_update_int_params(unsigned port)
+ {
+@@ -180,6 +187,22 @@ void ep93xx_gpio_int_mask(unsigned line)
+ 	gpio_int_unmasked[line >> 3] &= ~(1 << (line & 7));
+ }
+ 
++void ep93xx_gpio_int_debounce(unsigned int irq, int enable)
++{
++	int line = irq_to_gpio(irq);
++	int port = line >> 3;
++	int port_mask = 1 << (line & 7);
++
++	if (enable)
++		gpio_int_debouce[port] |= port_mask;
++	else
++		gpio_int_debouce[port] &= ~port_mask;
++
++	__raw_writeb(gpio_int_debouce[port],
++		EP93XX_GPIO_REG(int_debounce_register_offset[port]));
++}
++EXPORT_SYMBOL(ep93xx_gpio_int_debounce);
++
+ /*************************************************************************
+  * EP93xx IRQ handling
+  *************************************************************************/
+@@ -454,13 +477,93 @@ static struct platform_device ep93xx_ohci_device = {
+ 	.name		= "ep93xx-ohci",
+ 	.id		= -1,
+ 	.dev		= {
+-		.dma_mask		= (void *)0xffffffff,
+-		.coherent_dma_mask	= 0xffffffff,
++		.dma_mask = &ep93xx_ohci_device.dev.coherent_dma_mask,
++		.coherent_dma_mask = DMA_BIT_MASK(32),
+ 	},
+ 	.num_resources	= ARRAY_SIZE(ep93xx_ohci_resources),
+ 	.resource	= ep93xx_ohci_resources,
+ };
+ 
++
++static struct resource ep93xx_ssp_resources[] = {
++	{
++		.start = EP93XX_SPI_BASE, // virtual addresses
++		.end   = EP93XX_SPI_BASE + 0x14,
++		.flags = IORESOURCE_MEM,
++	}, {
++		.start = IRQ_EP93XX_SSP, // overrun in receive fifo
++		.end   = IRQ_EP93XX_SSP,
++		.flags = IORESOURCE_IRQ,
++	}
++};
++
++static struct ep93xx_spi_data ep93xx_ssp_data = {
++	.chip_select_num = 4,
++};
++
++static struct platform_device ep93xx_ssp_device = {
++	.name           = "ep93xx-spi",
++	.id             = 1,
++	.resource       = ep93xx_ssp_resources,
++	.num_resources  = ARRAY_SIZE(ep93xx_ssp_resources),
++	.dev = {
++		.platform_data = &ep93xx_ssp_data,
++	}
++};
++
++
++static const struct gpio_led ep93xx_led_pins[] = {
++  {
++    .name = "green",
++    .gpio = EP93XX_GPIO_LINE_GRLED,
++    .active_low = 0,
++    .default_trigger = "heartbeat",
++  },
++  {
++    .name = "red",
++    .gpio = EP93XX_GPIO_LINE_RDLED,
++    .active_low = 0,
++  }
++};
++
++static const struct gpio_led_platform_data ep93xx_led_data = {
++  .num_leds = ARRAY_SIZE(ep93xx_led_pins),
++  .leds = (void *)ep93xx_led_pins,
++};
++
++static struct platform_device ep93xx_gpio_leds = {
++  .name = "leds-gpio",
++  .id = -1,
++  .dev = {
++    .platform_data = (void *)&ep93xx_led_data,
++  }
++};
++
++#ifdef CONFIG_MACH_TS72XX
++static struct i2c_gpio_platform_data ep93xx_i2c_data = {
++  .sda_pin		= EP93XX_GPIO_LINE_EGPIO14, // DIO_6 (TS72XX DIO 2x8 header)
++  .sda_is_open_drain	= 0,
++  .scl_pin		= EP93XX_GPIO_LINE_EGPIO15, // DIO_7 (TS72XX DIO 2x8 header)
++  .scl_is_open_drain	= 0,
++  .udelay			= 2,
++};
++#else
++static struct i2c_gpio_platform_data ep93xx_i2c_data = {
++  .sda_pin		= EP93XX_GPIO_LINE_EEDAT,
++  .sda_is_open_drain	= 0,
++  .scl_pin		= EP93XX_GPIO_LINE_EECLK,
++  .scl_is_open_drain	= 0,
++  .udelay			= 2,
++};
++#endif
++
++static struct platform_device ep93xx_i2c_device = {
++  .name			= "i2c-gpio",
++  .id			= 0,
++  .dev.platform_data	= &ep93xx_i2c_data,
++};
++
++
+ extern void ep93xx_gpio_init(void);
+ 
+ void __init ep93xx_init_devices(void)
+@@ -481,6 +584,12 @@ void __init ep93xx_init_devices(void)
+ 	amba_device_register(&uart2_device, &iomem_resource);
+ 	amba_device_register(&uart3_device, &iomem_resource);
+ 
++	/* We have no specific I2C slave devices to register,
++	   so we do not have to call i2c_register_board_info. */
++	platform_device_register(&ep93xx_i2c_device);
++
++	platform_device_register(&ep93xx_gpio_leds);
+ 	platform_device_register(&ep93xx_rtc_device);
+ 	platform_device_register(&ep93xx_ohci_device);
++	platform_device_register(&ep93xx_ssp_device);
+ }
+diff --git a/arch/arm/mach-ep93xx/cpufreq.c b/arch/arm/mach-ep93xx/cpufreq.c
+new file mode 100644
+index 0000000..1721ac4
+--- /dev/null
++++ b/arch/arm/mach-ep93xx/cpufreq.c
+@@ -0,0 +1,265 @@
++/*
++ * cpufreq.c: clock scaling for Cirrus EP93XX embedded chip
++ *
++ * Copyright (C) 2008 Matthieu Crapet <mcrapet@gmail.com>
++ *
++ * Based on "cpu-ep93xx.c" driver (for 2.4 kernel) by
++ * Bob Lees bob@diamond.demon.co.uk (Diamond Consulting Services Ltd)
++ * Ideas taken from "clock.c" by Lennert Buytenhek <buytenh@wantstofly.org>
++ *
++ * This program is free software; you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License as published by
++ * the Free Software Foundation; either version 2 of the License, or
++ * (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
++ *
++ * Theory of operations
++ * ====================
++ *
++ * Clock scaling can be used to lower the power consumption of the CPU
++ * core. For this processor the major power saving is reducing the mem clk.
++ *
++ * The ep93xx has 2 registers to control the 2 PLLs of the ep93xx:
++ *   PLL1 controls the cpu, bus and peripheral clocks;
++ *   PLL2 controls the USB, MIR and ADC clocks.
++ *
++ *   ClkSet1 (EP93XX_SYSCON_CLOCK_SET1)  0x80930020  Clock speed control 1 (i.e. PLL1 config)
++ *   ClkSet2 (EP93XX_SYSCON_CLOCK_SET2)  0x80930024  Clock speed control 2 (i.e. PLL2 config)
++ *
++ * This driver only focus on PLL1. The pll has two multipliers/dividers:
++ * Fout = 14.7456 * (PLL1_X1FBD + 1) * (PLL1_X2FBD + 1) / ((PLL1_X2IPD + 1) * 2 ^ PLL1_PS)
++ *      = 14.7456 * (PLL1_X1FBD + 1) * (PLL1_X2FBD + 1) / (PLL1_X2IPD + 1) / 2 ^ PLL1_PS
++ *
++ *
++ * fclk [processor    ] = pll1 / fclk_divisor
++ * hclk [AHB bus clock] = pll1 / hclk_divisor
++ * pclk [APB bus clock] = hclk / pclk_divisor
++ * fclk >= hclk > pclk
++ *
++ *                        EP9301   EP9302/07/12/15
++ * PLL1 fout max (MHz)     528           528
++ * fclk min (MHz)         12.9          12.9
++ * fclk max (MHz)          166           200
++ * hclk max (MHz)           66           100
++ * pclk max (MHz)           50            50
++ *
++ * Notes:
++ * - Ethernet (100 MBit) doesn't work with hclk < 25MHz.
++ * - This driver does not use the clk_{put,roundrate} (clock.c) functions. It is
++ *   standalone.
++ * - Is it safe to have fclk = hclk ?
++ */
++
++#include <linux/kernel.h>
++#include <linux/types.h>
++#include <linux/init.h>
++#include <linux/cpufreq.h>
++#include <mach/hardware.h>
++
++
++/* ClkSet1 register */
++#define SYSCON_CLKSET1_PLL1_PS_SHIFT  16
++#define SYSCON_CLKSET1_PCLK_DIV_SHIFT 18
++#define SYSCON_CLKSET1_HCLK_DIV_SHIFT 20
++#define SYSCON_CLKSET1_FCLK_DIV_SHIFT 25
++
++#define CLKSET1(p, pl, pd, h, f)  ( p | \
++    ( pl << SYSCON_CLKSET1_PLL1_PS_SHIFT) | \
++    ( pd << SYSCON_CLKSET1_PCLK_DIV_SHIFT)| \
++    ( h << SYSCON_CLKSET1_HCLK_DIV_SHIFT) | \
++    ( f << SYSCON_CLKSET1_FCLK_DIV_SHIFT))
++
++typedef struct {
++  int speed;    /* in kHz */
++  u32 preset;   /* x1fbd, x2fbd and x2ipd are left unchanged */
++  u32 pll1_ps;  /* sets final divide from pll */
++  u32 pdiv;     /* sets pclk, peripheral clk (division of hclk) */
++  u32 hdiv;     /* sets hclk, bus (memory) clk */
++  u32 fdiv;     /* sets fclk, processor clk */
++} ep93xx_speed_settings_t;
++
++static char fclk_divisors[] = { 1, 2, 4, 8, 16, 1, 1, 1 };
++
++
++/* Suitable for EP9301. Assumed: PLL1 = 331.8 MHz (X1FBD1=19, X1FBD2=17, X2IPD=15)*/
++static ep93xx_speed_settings_t ep93xx_clkset1_settings[] =
++{
++  /* { speed, preset, pll1_ps, pdiv, hdiv, fdiv } */
++  { 165888, 0x00809a2f, 0, 1, 3, 1 }, /* [0x02B49A2F] fclk=165.9 (fdiv=2), hclk=66.4 (hdiv=5), pclk=33.2 (pdiv=2), ps=1 */
++  { 165887, 0x00809a2f, 1, 1, 3, 0 }, /* [0x00B59A2F] fclk=165.9 (fdiv=1), hclk=33.2 (hdiv=5), pclk=16.6 (pdiv=2), ps=2 */
++  {  82944, 0x00809a2f, 0, 1, 3, 2 }, /* [0x04B49A2F] fclk=82.9 (fdiv=4), hclk=66.4 (hdiv=5), pclk=33.2 (pdiv=2), ps=1 */
++  {  82943, 0x00809a2f, 0, 1, 4, 2 }, /* [0x04C49A2F] fclk=82.9 (fdiv=4), hclk=55.3 (hdiv=6), pclk=27.6 (pdiv=2), ps=1 */
++  {  82942, 0x00809a2f, 1, 1, 2, 1 }, /* [0x02A59A2F] fclk=82.9 (fdiv=2), hclk=41.5 (hdiv=4), pclk=20.7 (pdiv=2), ps=2 */
++  {  41472, 0x00809a2f, 0, 1, 5, 3 }, /* [0x06D49A2F] fclk=41.5 (fdiv=8), hclk=41.5 (hdiv=8), pclk=20.7 (pdiv=2), ps=1 */
++};
++
++#if 0
++/* Suitable for EP9302/07/12/15. Assumed: PLL1 = 400.1 MHz (X1FBD1=23, X1FBD2=25, X2IPD=22) */
++static ep93xx_speed_settings_t ep93xx_clkset1_settings[] =
++{
++  /* { speed, preset, pll1_ps, pdiv, hdiv, fdiv } */
++  { 200027, 0x0080bb36, 0, 1, 2, 1 }, /* [0x02A4BB36] fclk=200.0 (fdiv=2), hclk=100.0 (hdiv=4), pclk=50.0 (pdiv=2), ps=1 */
++  { 200026, 0x0080bb36, 0, 1, 3, 1 }, /* [0x02B4BB36] fclk=200.0 (fdiv=2), hclk=80.0 (hdiv=5), pclk=40.0 (pdiv=2), ps=1 */
++  { 200025, 0x0080bb36, 0, 1, 4, 1 }, /* [0x02C4BB36] fclk=200.0 (fdiv=2), hclk=66.7 (hdiv=6), pclk=33.3 (pdiv=2), ps=1 */
++  { 100013, 0x0080bb36, 0, 1, 3, 2 }, /* [0x04B4BB36] fclk=100.0 (fdiv=4), hclk=80.0 (hdiv=5), pclk=40.0 (pdiv=2), ps=1 */
++  { 100012, 0x0080bb36, 1, 1, 2, 1 }, /* [0x02A5BB36] fclk=100.0 (fdiv=2), hclk=50.0 (hdiv=4), pclk=25.0 (pdiv=2), ps=2 */
++  { 100011, 0x0080bb36, 1, 1, 1, 1 }, /* [0x0295BB36] fclk=100.0 (fdiv=2), hclk=100.0 (hdiv=2), pclk=50.0 (pdiv=2), ps=2 */
++  {  50006, 0x0080bb36, 2, 1, 2, 1 }, /* [0x02A6BB36] fclk=50.0 (fdiv=2), hclk=25.0 (hdiv=4), pclk=12.5 (pdiv=2), ps=4 */
++  {  50005, 0x0080bb36, 2, 1, 1, 1 }, /* [0x0296BB36] fclk=50.0 (fdiv=2), hclk=50.0 (hdiv=2), pclk=25.0 (pdiv=2), ps=4 */
++  {  25003, 0x0080bb36, 3, 1, 1, 1 }, /* [0x0297BB36] fclk=25.0 (fdiv=2), hclk=25.0 (hdiv=2), pclk=12.5 (pdiv=2), ps=8 */
++};
++#endif
++
++
++static unsigned long calc_pll_rate(u32 config_word)
++{
++  unsigned long long rate;
++
++  rate = 14745600;
++  rate *= ((config_word >> 11) & 0x1f) + 1;  /* X1FBD (5 bits) */
++  rate *= ((config_word >> 5) & 0x3f) + 1;   /* X2FBD (6 bits) */
++  do_div(rate, (config_word & 0x1f) + 1);    /* X2IPD (5 bits) */
++  rate = rate >> ((config_word >> 16) & 3);  /* PS    (2 bits) */
++
++  return (unsigned long)rate;
++}
++
++
++static ep93xx_speed_settings_t *ep93xx_find_clkset1(unsigned int khz, unsigned int relation)
++{
++  int i;
++  ep93xx_speed_settings_t *p = &ep93xx_clkset1_settings[0];
++
++  switch (relation) {
++    case CPUFREQ_RELATION_L: /* lowest frequency at or above target */
++      for (i = 0; i < sizeof(ep93xx_clkset1_settings)/sizeof(ep93xx_speed_settings_t); i++) {
++        if (ep93xx_clkset1_settings[i].speed < khz)
++          continue;
++        if (p->speed > ep93xx_clkset1_settings[i].speed) // take lowest value
++          p = &ep93xx_clkset1_settings[i];
++      }
++      break;
++
++    case CPUFREQ_RELATION_H: /* highest frequency below or at target */
++      for (i = 0; i < sizeof(ep93xx_clkset1_settings)/sizeof(ep93xx_speed_settings_t); i++) {
++        if (ep93xx_clkset1_settings[i].speed > khz)
++          continue;
++        if (p->speed < ep93xx_clkset1_settings[i].speed) // take highest value
++          p = &ep93xx_clkset1_settings[i];
++      }
++      break;
++  }
++
++  return p;
++}
++
++
++static int ep93xx_verify_speed(struct cpufreq_policy *policy)
++{
++  if (policy->cpu != 0)
++    return -EINVAL;
++
++  cpufreq_verify_within_limits(policy, policy->cpuinfo.min_freq, policy->cpuinfo.max_freq);
++
++  return 0;
++}
++
++
++static unsigned int ep93xx_get_speed(unsigned int cpu)
++{
++  unsigned int freq;
++  u32 value;
++
++  if (cpu)
++    return 0;
++
++  value = __raw_readl(EP93XX_SYSCON_CLOCK_SET1);
++  if (!(value & 0x00800000)) { /* PLL1 bypassed? */
++    freq = 14745600;
++  } else {
++    freq = calc_pll_rate(value);
++  }
++  freq /= fclk_divisors[(value >> 25) & 0x7];
++
++  freq = (freq + 500) / 1000; /* rounded result in kHz */
++  return freq;
++}
++
++
++static int ep93xx_set_target(struct cpufreq_policy *policy,
++    unsigned int target_freq,
++    unsigned int relation)
++{
++  struct cpufreq_freqs freqs;
++  ep93xx_speed_settings_t *config;
++  u32 value;
++
++  config =  ep93xx_find_clkset1(target_freq, relation);
++
++  freqs.old = ep93xx_get_speed(0);
++  freqs.new = config->speed;
++  freqs.cpu = 0;
++  freqs.flags = 0;
++
++  //printk("ep93xx: target_freq=%d, old=%d new=%d (kHz) rel=%d\n", target_freq, freqs.old, freqs.new, relation);
++
++  cpufreq_notify_transition(&freqs, CPUFREQ_PRECHANGE);
++
++  value = CLKSET1(config->preset, config->pll1_ps,
++      config->pdiv, config->hdiv, config->fdiv);
++  __raw_writel(value, EP93XX_SYSCON_CLOCK_SET1);
++
++  /* 5 nops required to fluch instruction pipeline */
++  __asm__ __volatile__("nop; nop; nop; nop; nop");
++
++  cpufreq_notify_transition(&freqs, CPUFREQ_POSTCHANGE);
++
++  return 0;
++}
++
++
++static int __init ep93xx_cpufreq_driver_init(struct cpufreq_policy *policy)
++{
++  printk(KERN_INFO "ep93xx-cpufreq: driver v1.0\n");
++
++  if (policy->cpu != 0)
++    return -EINVAL;
++
++  policy->cur = policy->min = policy->max = ep93xx_get_speed(0);
++
++  policy->cpuinfo.min_freq = 13000;
++
++  /* Check CPU version (ep9301 special case) */
++  if (policy->cur <= 166000)
++    policy->cpuinfo.max_freq = 166000;
++  else
++    policy->cpuinfo.max_freq = 200000;
++
++  policy->cpuinfo.transition_latency = 1000000; /* 1ms (unknown = CPUFREQ_ETERNAL) */
++
++  return 0;
++}
++
++static struct cpufreq_driver ep93xx_driver = {
++  .flags  = CPUFREQ_STICKY,
++  .verify = ep93xx_verify_speed,
++  .target = ep93xx_set_target,
++  .get    = ep93xx_get_speed,
++  .init   = ep93xx_cpufreq_driver_init,
++  .name   = "ep93xx",
++};
++
++static int __init ep93xx_cpufreq_init(void)
++{
++  return cpufreq_register_driver(&ep93xx_driver);
++}
++
++arch_initcall(ep93xx_cpufreq_init);
+diff --git a/arch/arm/mach-ep93xx/gpio.c b/arch/arm/mach-ep93xx/gpio.c
+index 0f3fb87..468d523 100644
+--- a/arch/arm/mach-ep93xx/gpio.c
++++ b/arch/arm/mach-ep93xx/gpio.c
+@@ -141,10 +141,10 @@ static void ep93xx_gpio_dbg_show(struct seq_file *s, struct gpio_chip *chip)
+ static struct ep93xx_gpio_chip ep93xx_gpio_banks[] = {
+ 	EP93XX_GPIO_BANK("A", 0x00, 0x10, 0),
+ 	EP93XX_GPIO_BANK("B", 0x04, 0x14, 8),
+-	EP93XX_GPIO_BANK("C", 0x30, 0x34, 40),
++	EP93XX_GPIO_BANK("C", 0x08, 0x18, 40),
+ 	EP93XX_GPIO_BANK("D", 0x0c, 0x1c, 24),
+ 	EP93XX_GPIO_BANK("E", 0x20, 0x24, 32),
+-	EP93XX_GPIO_BANK("F", 0x08, 0x18, 16),
++	EP93XX_GPIO_BANK("F", 0x30, 0x34, 16),
+ 	EP93XX_GPIO_BANK("G", 0x38, 0x3c, 48),
+ 	EP93XX_GPIO_BANK("H", 0x40, 0x44, 56),
+ };
+diff --git a/arch/arm/mach-ep93xx/include/mach/ep93xx-keypad.h b/arch/arm/mach-ep93xx/include/mach/ep93xx-keypad.h
+new file mode 100644
+index 0000000..e39743a
+--- /dev/null
++++ b/arch/arm/mach-ep93xx/include/mach/ep93xx-keypad.h
+@@ -0,0 +1,30 @@
++/*
++ *  EP93xx "GPIO Port X" input keypad driver
++ *
++ * (c) Copyright 2008  Matthieu Crapet <mcrapet@gmail.com>
++ * Based on OMAP Keypad Driver (omap-keypad.c)
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License
++ * as published by the Free Software Foundation; either version
++ * 2 of the License, or (at your option) any later version.
++ */
++
++#ifndef EP93XX_KEYPAD_H
++#define EP93XX_KEYPAD_H
++
++#define EP93XX_PORTX_MAXROW 4
++#define EP93XX_PORTX_MAXCOL 4
++
++/* Example: Port X bit 0..7 = C0,..Cx,R0..Ry
++ * Cols are outputs
++ * Rows are inputs
++ */
++struct ep93xx_gpio_portx_keypad_platform_data {
++  int nr_rows, nr_cols;
++  int keycodes[EP93XX_PORTX_MAXROW][EP93XX_PORTX_MAXCOL]; /* Left to right, from top to bottom */
++  int gpio_rows[EP93XX_PORTX_MAXROW];                     /* R0, R1, .., R_{MAXROW-1} */
++  int gpio_cols[EP93XX_PORTX_MAXCOL];                     /* C0, C1, .., C_{MAXCOL-1} */
++};
++
++#endif /* EP93XX_KEYPAD_H */
+diff --git a/arch/arm/mach-ep93xx/include/mach/ep93xx-regs.h b/arch/arm/mach-ep93xx/include/mach/ep93xx-regs.h
+index 9f4458c..61ca31e 100644
+--- a/arch/arm/mach-ep93xx/include/mach/ep93xx-regs.h
++++ b/arch/arm/mach-ep93xx/include/mach/ep93xx-regs.h
+@@ -70,6 +70,8 @@
+ #define EP93XX_I2S_BASE			(EP93XX_APB_VIRT_BASE + 0x00020000)
+ 
+ #define EP93XX_SECURITY_BASE		(EP93XX_APB_VIRT_BASE + 0x00030000)
++#define EP93XX_SECURITY_REG(x)		(EP93XX_SECURITY_BASE + (x))
++#define EP93XX_SECURITY_UNIQID		EP93XX_SECURITY_REG(0x2440)
+ 
+ #define EP93XX_GPIO_BASE		(EP93XX_APB_VIRT_BASE + 0x00040000)
+ #define EP93XX_GPIO_REG(x)		(EP93XX_GPIO_BASE + (x))
+@@ -78,20 +80,28 @@
+ #define EP93XX_GPIO_F_INT_ACK		EP93XX_GPIO_REG(0x54)
+ #define EP93XX_GPIO_F_INT_ENABLE	EP93XX_GPIO_REG(0x58)
+ #define EP93XX_GPIO_F_INT_STATUS	EP93XX_GPIO_REG(0x5c)
++#define EP93XX_GPIO_F_INT_DEBOUNCE	EP93XX_GPIO_REG(0x64)
+ #define EP93XX_GPIO_A_INT_TYPE1		EP93XX_GPIO_REG(0x90)
+ #define EP93XX_GPIO_A_INT_TYPE2		EP93XX_GPIO_REG(0x94)
+ #define EP93XX_GPIO_A_INT_ACK		EP93XX_GPIO_REG(0x98)
+ #define EP93XX_GPIO_A_INT_ENABLE	EP93XX_GPIO_REG(0x9c)
++#define EP93XX_GPIO_A_INT_DEBOUNCE	EP93XX_GPIO_REG(0xa8)
+ #define EP93XX_GPIO_A_INT_STATUS	EP93XX_GPIO_REG(0xa0)
+ #define EP93XX_GPIO_B_INT_TYPE1		EP93XX_GPIO_REG(0xac)
+ #define EP93XX_GPIO_B_INT_TYPE2		EP93XX_GPIO_REG(0xb0)
+ #define EP93XX_GPIO_B_INT_ACK		EP93XX_GPIO_REG(0xb4)
+ #define EP93XX_GPIO_B_INT_ENABLE	EP93XX_GPIO_REG(0xb8)
+ #define EP93XX_GPIO_B_INT_STATUS	EP93XX_GPIO_REG(0xbc)
++#define EP93XX_GPIO_B_INT_DEBOUNCE	EP93XX_GPIO_REG(0xc4)
++
++#define EP93XX_GPIO_A_DATA		EP93XX_GPIO_REG(0x00)
++#define EP93XX_GPIO_A_DIRECTION		EP93XX_GPIO_REG(0x10)
++#define EP93XX_GPIO_B_DATA		EP93XX_GPIO_REG(0x04)
+ 
+ #define EP93XX_AAC_BASE			(EP93XX_APB_VIRT_BASE + 0x00080000)
+ 
+ #define EP93XX_SPI_BASE			(EP93XX_APB_VIRT_BASE + 0x000a0000)
++#define EP93XX_SPI_PHYS_BASE	(EP93XX_APB_PHYS_BASE + 0x000a0000)
+ 
+ #define EP93XX_IRDA_BASE		(EP93XX_APB_VIRT_BASE + 0x000b0000)
+ 
+@@ -125,6 +135,8 @@
+ #define EP93XX_SYSCON_CLOCK_SET2	EP93XX_SYSCON_REG(0x24)
+ #define EP93XX_SYSCON_DEVICE_CONFIG	EP93XX_SYSCON_REG(0x80)
+ #define EP93XX_SYSCON_DEVICE_CONFIG_CRUNCH_ENABLE	0x00800000
++#define EP93XX_SYSCON_DEVICE_CONFIG_SHENA	0x00000001
++#define EP93XX_SYSCON_CHIPID		EP93XX_SYSCON_REG(0x94)
+ #define EP93XX_SYSCON_SWLOCK		EP93XX_SYSCON_REG(0xc0)
+ 
+ #define EP93XX_WATCHDOG_BASE		(EP93XX_APB_VIRT_BASE + 0x00140000)
+diff --git a/arch/arm/mach-ep93xx/include/mach/gpio.h b/arch/arm/mach-ep93xx/include/mach/gpio.h
+index f702041..0a1498a 100644
+--- a/arch/arm/mach-ep93xx/include/mach/gpio.h
++++ b/arch/arm/mach-ep93xx/include/mach/gpio.h
+@@ -99,6 +99,8 @@
+ /* maximum value for irq capable line identifiers */
+ #define EP93XX_GPIO_LINE_MAX_IRQ	EP93XX_GPIO_LINE_F(7)
+ 
++extern void ep93xx_gpio_int_debounce(unsigned int irq, int enable);
++
+ /* new generic GPIO API - see Documentation/gpio.txt */
+ 
+ #include <asm-generic/gpio.h>
+diff --git a/arch/arm/mach-ep93xx/include/mach/memory.h b/arch/arm/mach-ep93xx/include/mach/memory.h
+index f1b6335..b202d93 100644
+--- a/arch/arm/mach-ep93xx/include/mach/memory.h
++++ b/arch/arm/mach-ep93xx/include/mach/memory.h
+@@ -1,14 +1,224 @@
+ /*
+- * arch/arm/mach-ep93xx/include/mach/memory.h
++ *  arch/arm/mach-ep93xx/include/mach/memory.h
++ *
++ *  ******************************************************
++ *	*    CONFUSED?  Read Documentation/IO-mapping.txt	 *
++ *  ******************************************************
++ *
++ *
++ *  Copyright (C) 1999 ARM Limited
++ *  Copyright (C) 2002-2003 Cirrus Logic Corp.
++ *
++ * This program is free software; you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License as published by
++ * the Free Software Foundation; either version 2 of the License, or
++ * (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+  */
+-
+ #ifndef __ASM_ARCH_MEMORY_H
+ #define __ASM_ARCH_MEMORY_H
+ 
+-#define PHYS_OFFSET		UL(0x00000000)
++/*
++ * For EP93xx, SDRAM can be discontiguous, in a set number of blocks
++ * of equal size and (usually) equal spacing.  The 9301 spacing isn't equal.
++ *
++ * SDRAM_START is the physical address of the start of SDRAM.
++ * SDRAM_NUMBER_OF_BLOCKS = # of blocks of SDRAM.
++ * Each block is of size SDRAM_BLOCK_SIZE and starts at a boundary
++ * of SDRAM_BLOCK_START_BOUNDARY.
++ *
++ * So memory blocks are at:
++ *  SDRAM_START
++ *  SDRAM_START + SDRAM_BLOCK_START_BOUNDARY
++ *  SDRAM_START + (SDRAM_BLOCK_START_BOUNDARY * 2)
++ *  SDRAM_START + (SDRAM_BLOCK_START_BOUNDARY * 3)
++ *  so on
++ */
++
++#ifndef CONFIG_DISCONTIGMEM
++
++/*
++ * Single 32Meg block of physical memory physically located at 0 .
++ */
++#define SDRAM_START                         0x00000000
++#define SDRAM_NUMBER_OF_BLOCKS              1
++#define SDRAM_BLOCK_SIZE                    0x02000000
++#define SDRAM_BLOCK_START_BOUNDARY          0x00000000
++
++#else /* CONFIG_DISCONTIGMEM */
++
++#ifdef CONFIG_ARCH_EP9301
++
++/*
++ * The 9301 memory map doesn't have regular gaps because two
++ * address pins aren't connected - see asm-arm/mach-ep93xx/arch.c to
++ * see how it is.
++ */
++#define SDRAM_START                         0x00000000
++#define SDRAM_NUMBER_OF_BLOCKS              4
++#define SDRAM_BLOCK_SIZE                    0x00800000
++#define SDRAM_BLOCK_START_BOUNDARY          0x01000000
++
++#else /* CONFIG_ARCH_EP9312 or CONFIG_ARCH_EP9315 */
++
++/*
++ * 2 32Meg blocks that are located physically at 0 and 64Meg.
++ */
++#define SDRAM_START                         0x00000000
++#define SDRAM_NUMBER_OF_BLOCKS              2
++#define SDRAM_BLOCK_SIZE                    0x02000000
++#define SDRAM_BLOCK_START_BOUNDARY          0x04000000
++
++#endif
++
++/*
++ * Here we are assuming EP93xx is configured to have two 32MB SDRAM
++ * areas with 32MB of empty space between them.  So use 24 for the node
++ * max shift to get 64MB node sizes.
++ */
++#define NODE_MAX_MEM_SHIFT	26
++#define NODE_MAX_MEM_SIZE	(1<<NODE_MAX_MEM_SHIFT)
++
++#endif /* CONFIG_DISCONTIGMEM */
++
++
++/*
++ * MEM_SIZE and PHYS_OFFSET are used to set size of SDRAM for
++ * initial page table in arch/arm/kernel/setup.c
++ * For ep93xx, PHYS_OFFSET is set to be SDRAM_START.
++ */
++#define MEM_SIZE                            (SDRAM_BLOCK_SIZE)
++
++/*
++ * Task size: 2GB (from 0 to base of IO in virtual space)
++ */
++#define TASK_SIZE		UL(0x80000000)
++/*  HASH define TASK_SIZE_26	(0x04000000UL) */
++
++/*
++ * This decides where the kernel will search for a free chunk of vm
++ * space during mmap's.
++ */
++#define TASK_UNMAPPED_BASE (TASK_SIZE / 3)
++
++/*
++ * Page offset: 3GB (start of kernel memory in virtual space)
++ * Phys offset: 0   (start of kernel memory in physical space)
++ */
++#define PAGE_OFFSET		UL(0xC0000000)
++#define PHYS_OFFSET		(SDRAM_START)
++
++#ifndef __ASSEMBLY__
++/*
++ * Given a page frame number, convert it to a node id.
++ */
++static inline unsigned long PFN_TO_NID(unsigned long pfn) {
++	unsigned long block = (pfn >> 12);
++
++	switch(block) {
++	case 0x0:
++		return 0;
++	case 0x1:
++		return 1;
++	case 0x2:
++		return 2;
++	case 0x3:
++		return 3;
++	case 0x4:
++		return 4;
++	case 0x5:
++		return 5;
++	case 0x6:
++		return 6;
++	case 0x7:
++		return 7;
++	case 0xc0:
++		return 8;
++	case 0xc1:
++		return 9;
++	case 0xc4:
++		return 10;
++	case 0xc5:
++		return 11;
++	case 0xd0:
++		return 12;
++	case 0xd1:
++		return 13;
++	case 0xd4:
++		return 14;
++	case 0xd5:
++		return 15;
++	case 0xe0:
++		return 16;
++	case 0xe1:
++		return 17;
++	case 0xe4:
++		return 18;
++	case 0xe5:
++		return 19;
++	default:
++		return 0xff;
++	}
++}
++#endif
++
++/*
++ * Virtual view <-> DMA view memory address translations
++ * virt_to_bus: Used to translate the virtual address to an
++ *              address suitable to be passed to set_dma_addr
++ * bus_to_virt: Used to convert an address for DMA operations
++ *              to an address that the kernel can use.
++ */
++#define __virt_to_bus__is_a_macro
++#define __virt_to_bus(x)	 __virt_to_phys(x)
++
++#define __bus_to_virt__is_a_macro
++#define __bus_to_virt(x)	 __phys_to_virt(x)
++
++
++/*
++ * Note that this file is included by include/asm-arm/memory.h so
++ * the macros in this file have to play nice with those.
++ */
++#ifdef CONFIG_DISCONTIGMEM
++
++/*
++ * Given a kernel address, find the home node of the underlying memory.
++ */
++#define KVADDR_TO_NID(addr) \
++		((unsigned long)(PFN_TO_NID(__virt_to_phys((unsigned long)addr) >> PAGE_SHIFT)))
++
++/*
++ * Given a kaddr, ADDR_TO_MAPBASE finds the owning node of the memory
++ * and returns the mem_map of that node.
++ */
++#define ADDR_TO_MAPBASE(kaddr) NODE_MEM_MAP(KVADDR_TO_NID((unsigned long)(kaddr)))
++
++#define PFN_TO_MAPBASE(pfn)	NODE_MEM_MAP(PFN_TO_NID(pfn))
++
++/*
++ * Given a kaddr, LOCAL_MAR_NR finds the owning node of the memory
++ * and returns the index corresponding to the appropriate page in the
++ * node's mem_map.
++ */
++
++
++#define LOCAL_MAP_NR(kaddr)					\
++	(((unsigned long)(kaddr) & (0xffffffUL)) >> PAGE_SHIFT)
++
++
++
++
+ 
+-#define __bus_to_virt(x)	__phys_to_virt(x)
+-#define __virt_to_bus(x)	__virt_to_phys(x)
+ 
++#endif /* CONFIG_DISCONTIGMEM */
+ 
+ #endif
+diff --git a/arch/arm/mach-ep93xx/include/mach/spi.h b/arch/arm/mach-ep93xx/include/mach/spi.h
+new file mode 100644
+index 0000000..0e07fc9
+--- /dev/null
++++ b/arch/arm/mach-ep93xx/include/mach/spi.h
+@@ -0,0 +1,18 @@
++/*
++ * arch/arm/mach-ep93xx/include/mach/spi.h
++ */
++
++struct ep93xx_spi_data {
++	u16 chip_select_num;
++};
++
++
++/* spi_board_info.controller_data for SPI slave devices */
++struct ep93xx_spi_chip {
++	void (*cs_control)(u32 command);
++};
++
++/* Chip-select state */
++#define SPI_CS_ASSERT    0x1
++#define SPI_CS_DEASSERT  0x2
++#define SPI_CS_INIT      0x4
+diff --git a/arch/arm/mach-ep93xx/include/mach/ts72xx.h b/arch/arm/mach-ep93xx/include/mach/ts72xx.h
+index 30b318a..6efb17e 100644
+--- a/arch/arm/mach-ep93xx/include/mach/ts72xx.h
++++ b/arch/arm/mach-ep93xx/include/mach/ts72xx.h
+@@ -8,12 +8,23 @@
+  * virt		phys		size
+  * febff000	22000000	4K	model number register
+  * febfe000	22400000	4K	options register
+- * febfd000	22800000	4K	options register #2
++ * febfd000	22800000	4K	options register #2 (JP6 and TS-9420 flags)
+  * febfc000	[67]0000000	4K	NAND data register
+  * febfb000	[67]0400000	4K	NAND control register
+  * febfa000	[67]0800000	4K	NAND busy register
+  * febf9000	10800000	4K	TS-5620 RTC index register
+  * febf8000	11700000	4K	TS-5620 RTC data register
++ * febf7000	23800000	4K	CPLD watchdog (control register)
++ * febf6000	23c00000	4K	CPLD watchdog (feed register)
++ * febf5000	23400000	4K	PLD version (3 bits)
++ * febf4000	22c00000	4K	RS-485 control register
++ * febf3000	23000000	4K	RS-485 mode register
++ * febf2000	10800000	4K	jumpers/max197 busy bit/COM1 dcd register (8-bit, read only)
++ * febf1000	10f00000	4K	max197 sample/control register (16-bit read/8-bit write)
++ * febf0000	11e00000	4K	PC/104 8-bit I/O
++ * febef000	21e00000	4K	PC/104 16-bit I/O
++ * fea00000	11a00000	1MB	PC/104 8-bit memory
++ * fe900000	21a00000	1MB	PC/104 16-bit memory
+  */
+ 
+ #define TS72XX_MODEL_PHYS_BASE		0x22000000
+@@ -59,7 +70,6 @@
+ #define TS72XX_NAND_BUSY_VIRT_BASE	0xfebfa000
+ #define TS72XX_NAND_BUSY_SIZE		0x00001000
+ 
+-
+ #define TS72XX_RTC_INDEX_VIRT_BASE	0xfebf9000
+ #define TS72XX_RTC_INDEX_PHYS_BASE	0x10800000
+ #define TS72XX_RTC_INDEX_SIZE		0x00001000
+@@ -68,6 +78,61 @@
+ #define TS72XX_RTC_DATA_PHYS_BASE	0x11700000
+ #define TS72XX_RTC_DATA_SIZE		0x00001000
+ 
++#define TS72XX_WATCHDOG_CONTROL_VIRT_BASE	0xfebf7000
++#define TS72XX_WATCHDOG_CONTROL_PHYS_BASE	0x23800000
++#define TS72XX_WATCHDOG_CONTROL_SIZE	0x00001000
++
++#define TS72XX_WATCHDOG_FEED_VIRT_BASE	0xfebf6000
++#define TS72XX_WATCHDOG_FEED_PHYS_BASE	0x23c00000
++#define TS72XX_WATCHDOG_FEED_SIZE	0x00001000
++
++#define TS72XX_PLD_VERSION_VIRT_BASE	0xfebf5000
++#define TS72XX_PLD_VERSION_PHYS_BASE	0x23400000
++#define TS72XX_PLD_VERSION_SIZE	0x00001000
++
++#define TS72XX_RS485_CONTROL_VIRT_BASE	0xfebf4000
++#define TS72XX_RS485_CONTROL_PHYS_BASE	0x22c00000
++#define TS72XX_RS485_CONTROL_SIZE	0x00001000
++
++#define TS72XX_RS485_MODE_VIRT_BASE	0xfebf3000
++#define TS72XX_RS485_MODE_PHYS_BASE	0x23000000
++#define TS72XX_RS485_MODE_SIZE	0x00001000
++
++#define TS72XX_JUMPERS_MAX197_VIRT_BASE	0xfebf2000
++#define TS72XX_JUMPERS_MAX197_PHYS_BASE	0x10800000
++#define TS72XX_JUMPERS_MAX197_SIZE	0x00001000
++
++#define TS72XX_MAX197_SAMPLE_VIRT_BASE	0xfebf1000
++#define TS72XX_MAX197_SAMPLE_PHYS_BASE	0x10f00000
++#define TS72XX_MAX197_SAMPLE_SIZE	0x00001000
++
++
++#define TS72XX_PC104_8BIT_IO_VIRT_BASE  0xfebf0000
++#define TS72XX_PC104_8BIT_IO_PHYS_BASE  0x11e00000
++#define TS72XX_PC104_8BIT_IO_SIZE       0x00001000
++#define TS72XX_PC104_8BIT_MEM_VIRT_BASE 0xfea00000
++#define TS72XX_PC104_8BIT_MEM_PHYS_BASE 0x11a00000
++#define TS72XX_PC104_8BIT_MEM_SIZE      0x00100000
++
++#define TS72XX_PC104_16BIT_IO_VIRT_BASE  0xfebef000
++#define TS72XX_PC104_16BIT_IO_PHYS_BASE  0x21e00000
++#define TS72XX_PC104_16BIT_IO_SIZE       0x00001000
++#define TS72XX_PC104_16BIT_MEM_VIRT_BASE 0xfe900000
++#define TS72XX_PC104_16BIT_MEM_PHYS_BASE 0x21a00000
++#define TS72XX_PC104_16BIT_MEM_SIZE      0x00100000
++
++/*
++ * TS7200 CF memory map:
++ *
++ * phys		size	description
++ * 11000000	7	CF registers (8-bit each), starting at 11000001
++ * 10400006	2	CF aux registers (8-bit)
++ * 21000000	2	CF data register (16-bit)
++ */
++
++#define TS7200_CF_CMD_PHYS_BASE  0x11000000
++#define TS7200_CF_AUX_PHYS_BASE  0x10400006
++#define TS7200_CF_DATA_PHYS_BASE 0x21000000
+ 
+ #ifndef __ASSEMBLY__
+ #include <asm/io.h>
+@@ -98,4 +163,21 @@ static inline int is_ts9420_installed(void)
+ 	return !!(__raw_readb(TS72XX_OPTIONS2_VIRT_BASE) &
+ 					TS72XX_OPTIONS2_TS9420);
+ }
++
++static inline int is_rs485_installed(void)
++{
++	return !!(__raw_readb(TS72XX_OPTIONS_VIRT_BASE) &
++					TS72XX_OPTIONS_COM2_RS485);
++}
++
++static inline int get_ts72xx_pld_version(void)
++{
++	return (__raw_readb(TS72XX_PLD_VERSION_VIRT_BASE) & 0x7);
++}
++
++static inline int is_jp6_set(void)
++{
++	return (__raw_readb(TS72XX_OPTIONS2_VIRT_BASE) & 0x1);
++}
++
+ #endif
+diff --git a/arch/arm/mach-ep93xx/include/mach/uncompress.h b/arch/arm/mach-ep93xx/include/mach/uncompress.h
+index 1fd2f17..ecdfd64 100644
+--- a/arch/arm/mach-ep93xx/include/mach/uncompress.h
++++ b/arch/arm/mach-ep93xx/include/mach/uncompress.h
+@@ -77,9 +77,74 @@ static void ethernet_reset(void)
+ }
+ 
+ 
++/*
++ * We don't have clock management for the UARTs (amba-pl010)
++ * yet, so hackily enable all UART clocks here for now.
++ */
++#define PHYS_SYSCON_DEVICE_CONFIG	0x80930080
++#define PHYS_SYSCON_SWLOCK		0x809300c0
++
++static void enable_all_uart_clocks(void)
++{
++	unsigned int v;
++
++	v = __raw_readl(PHYS_SYSCON_DEVICE_CONFIG);
++	__raw_writel(0xaa, PHYS_SYSCON_SWLOCK);
++	__raw_writel(v | 0x01140000, PHYS_SYSCON_DEVICE_CONFIG);
++}
++
++
++/*
++ * Some bootloaders don't turn on the UARTBAUD bit, which means that
++ * the UARTs will be running off a divided 7.3728 MHz clock instead of
++ * the 14.7456 MHz peripheral clock when linux boots.
++ *
++ * We detect that condition here and fix it by turning on UARTBAUD, and
++ * then reprogramming the divisors on all enabled UARTs to twice what
++ * they were before we turned UARTBAUD on, to preserve the programmed
++ * baud rate.
++ */
++#define PHYS_SYSCON_CLOCK_CONTROL	0x80930004
++#define SYSCON_CLOCK_UARTBAUD		0x20000000
++#define PHYS_UART1_BASE			0x808c0000
++#define PHYS_UART2_BASE			0x808d0000
++#define PHYS_UART3_BASE			0x808e0000
++
++static void uart_divisor_times_two(unsigned int base)
++{
++	u16 divisor;
++
++	divisor = __raw_readb(base + 0x0c) << 8;
++	divisor |= __raw_readb(base + 0x10);
++	if (divisor) {
++		divisor = (2 * (divisor + 1)) - 1;
++		__raw_writeb(divisor >> 8, base + 0x0c);
++		__raw_writeb(divisor & 0xff, base + 0x10);
++		__raw_writeb(__raw_readb(base + 0x08), base + 0x08);
++	}
++}
++
++static void fix_uart_base(void)
++{
++	unsigned int v;
++
++	v = __raw_readl(PHYS_SYSCON_CLOCK_CONTROL);
++	if ((v & SYSCON_CLOCK_UARTBAUD) == 0) {
++		v |= SYSCON_CLOCK_UARTBAUD;
++		__raw_writel(v, PHYS_SYSCON_CLOCK_CONTROL);
++
++		uart_divisor_times_two(PHYS_UART1_BASE);
++		uart_divisor_times_two(PHYS_UART2_BASE);
++		uart_divisor_times_two(PHYS_UART3_BASE);
++	}
++}
++
++
+ static void arch_decomp_setup(void)
+ {
+ 	ethernet_reset();
++	enable_all_uart_clocks();
++	fix_uart_base();
+ }
+ 
+ #define arch_decomp_wdog()
+diff --git a/arch/arm/mach-ep93xx/pm.c b/arch/arm/mach-ep93xx/pm.c
+new file mode 100644
+index 0000000..0c4ba53
+--- /dev/null
++++ b/arch/arm/mach-ep93xx/pm.c
+@@ -0,0 +1,77 @@
++/*
++ *  arch/arm/mach-ep93xx/pm.c
++ *
++ *  EP93xx Power Management Routines
++ *
++ *  Based on pm.c from Andre Renaud, Bluewater Systems Ltd.
++ *
++ *  (c) Copyright 2008  Matthieu Crapet <mcrapet@gmail.com>
++ *
++ *  This program is free software; you can redistribute it and/or
++ *  modify it under the terms of the GNU General Public License
++ *  as published by the Free Software Foundation; either version
++ *  2 of the License, or (at your option) any later version.
++ */
++
++#include <linux/suspend.h>
++#include <linux/sched.h>
++#include <linux/proc_fs.h>
++#include <linux/interrupt.h>
++#include <linux/sysfs.h>
++#include <linux/module.h>
++#include <mach/hardware.h>
++
++
++static inline void ep93xx_standby(void)
++{
++  u32 v;
++  v = __raw_readl(EP93XX_SYSCON_DEVICE_CONFIG);
++  v |= EP93XX_SYSCON_DEVICE_CONFIG_SHENA;
++  __raw_writel(0xaa, EP93XX_SYSCON_SWLOCK);
++  __raw_writel(v, EP93XX_SYSCON_DEVICE_CONFIG);
++
++  v = __raw_readl(EP93XX_SYSCON_STANDBY);
++
++  asm("nop; nop; nop; nop; nop");
++}
++
++static inline void ep93xx_resume(void)
++{
++  u32 v;
++
++  v = __raw_readl(EP93XX_SYSCON_DEVICE_CONFIG);
++  v &= ~EP93XX_SYSCON_DEVICE_CONFIG_SHENA;
++  __raw_writel(0xaa, EP93XX_SYSCON_SWLOCK);
++  __raw_writel(v, EP93XX_SYSCON_DEVICE_CONFIG);
++}
++
++static int suspend_ep93xx_enter(suspend_state_t state)
++{
++  switch (state) {
++    case PM_SUSPEND_STANDBY:
++    case PM_SUSPEND_MEM:
++      ep93xx_standby(); /* go zzz */
++      ep93xx_resume();
++  }
++  return 0;
++}
++
++static int suspend_ep93xx_valid(suspend_state_t state)
++{
++  return (state == PM_SUSPEND_STANDBY) ||
++    (state == PM_SUSPEND_MEM);
++}
++
++
++static struct platform_suspend_ops ep93xx_suspend_ops = {
++  .enter	= suspend_ep93xx_enter,
++  .valid	= suspend_ep93xx_valid,
++};
++
++static int __init ep93xx_pm_init(void)
++{
++  pr_info("ep93xx: Power Management\n");
++  suspend_set_ops(&ep93xx_suspend_ops);
++  return 0;
++}
++__initcall(ep93xx_pm_init);
+diff --git a/arch/arm/mach-ep93xx/ts72xx.c b/arch/arm/mach-ep93xx/ts72xx.c
+index c3cbff1..ab6aab3 100644
+--- a/arch/arm/mach-ep93xx/ts72xx.c
++++ b/arch/arm/mach-ep93xx/ts72xx.c
+@@ -19,8 +19,11 @@
+ #include <linux/mtd/physmap.h>
+ #include <linux/platform_device.h>
+ #include <linux/m48t86.h>
++#include <linux/spi/spi.h>
+ #include <asm/io.h>
+ #include <mach/hardware.h>
++#include <mach/spi.h>
++#include <mach/gpio.h>
+ #include <asm/mach-types.h>
+ #include <asm/mach/arch.h>
+ #include <asm/mach/map.h>
+@@ -31,6 +34,11 @@ static struct map_desc ts72xx_io_desc[] __initdata = {
+ 		.pfn		= __phys_to_pfn(TS72XX_MODEL_PHYS_BASE),
+ 		.length		= TS72XX_MODEL_SIZE,
+ 		.type		= MT_DEVICE,
++  }, {
++    .virtual  = TS72XX_PLD_VERSION_VIRT_BASE,
++    .pfn    = __phys_to_pfn(TS72XX_PLD_VERSION_PHYS_BASE),
++    .length   = TS72XX_PLD_VERSION_SIZE,
++    .type   = MT_DEVICE,
+ 	}, {
+ 		.virtual	= TS72XX_OPTIONS_VIRT_BASE,
+ 		.pfn		= __phys_to_pfn(TS72XX_OPTIONS_PHYS_BASE),
+@@ -51,7 +59,36 @@ static struct map_desc ts72xx_io_desc[] __initdata = {
+ 		.pfn		= __phys_to_pfn(TS72XX_RTC_DATA_PHYS_BASE),
+ 		.length		= TS72XX_RTC_DATA_SIZE,
+ 		.type		= MT_DEVICE,
+-	}
++	},
++	/* Use this for debug only. Each device will map its own PC/104 address space */
++	///* PC/104 (8-bit) I/O bus */
++	//{
++	//  .virtual  = TS72XX_PC104_8BIT_IO_VIRT_BASE,
++	//  .pfn    = __phys_to_pfn(TS72XX_PC104_8BIT_IO_PHYS_BASE),
++	//  .length   = TS72XX_PC104_8BIT_IO_SIZE,
++	//  .type   = MT_DEVICE,
++	//},
++	///* PC/104 (16-bit) I/O bus */
++	//{
++	//  .virtual  = TS72XX_PC104_16BIT_IO_VIRT_BASE,
++	//  .pfn    = __phys_to_pfn(TS72XX_PC104_16BIT_IO_PHYS_BASE),
++	//  .length   = TS72XX_PC104_16BIT_IO_SIZE,
++	//  .type   = MT_DEVICE,
++	//},
++	///* PC/104 (8-bit) MEM bus */
++	//{
++	//  .virtual  = TS72XX_PC104_8BIT_MEM_VIRT_BASE,
++	//  .pfn    = __phys_to_pfn(TS72XX_PC104_8BIT_MEM_PHYS_BASE),
++	//  .length   = TS72XX_PC104_8BIT_MEM_SIZE,
++	//  .type   = MT_DEVICE,
++	//},
++	///* PC/104 (16-bit) MEM bus */
++	//{
++	//  .virtual  = TS72XX_PC104_16BIT_MEM_VIRT_BASE,
++	//  .pfn    = __phys_to_pfn(TS72XX_PC104_16BIT_MEM_PHYS_BASE),
++	//  .length   = TS72XX_PC104_16BIT_MEM_SIZE,
++	//  .type   = MT_DEVICE,
++	//}
+ };
+ 
+ static struct map_desc ts72xx_nand_io_desc[] __initdata = {
+@@ -111,13 +148,16 @@ static void __init ts72xx_map_io(void)
+ 	}
+ }
+ 
++/* NOR flash (TS-7200 only) */
++
++#if defined(CONFIG_MTD_PHYSMAP) || defined(CONFIG_MTD_PHYSMAP_MODULE)
+ static struct physmap_flash_data ts72xx_flash_data = {
+-	.width		= 1,
++	.width		= 2,
+ };
+ 
+ static struct resource ts72xx_flash_resource = {
+ 	.start		= TS72XX_NOR_PHYS_BASE,
+-	.end		= TS72XX_NOR_PHYS_BASE + 0x00ffffff,
++	.end		= TS72XX_NOR_PHYS_BASE + SZ_16M - 1,   /* SZ_8M for 8mb flash */
+ 	.flags		= IORESOURCE_MEM,
+ };
+ 
+@@ -130,6 +170,9 @@ static struct platform_device ts72xx_flash = {
+ 	.num_resources	= 1,
+ 	.resource	= &ts72xx_flash_resource,
+ };
++#endif
++
++/* Real time clock  */
+ 
+ static unsigned char ts72xx_rtc_readbyte(unsigned long addr)
+ {
+@@ -157,6 +200,8 @@ static struct platform_device ts72xx_rtc_device = {
+ 	.num_resources		= 0,
+ };
+ 
++/* Ethernet */
++
+ static struct ep93xx_eth_data ts72xx_eth_data = {
+ 	.phy_id			= 1,
+ };
+@@ -183,16 +228,107 @@ static struct platform_device ts72xx_eth_device = {
+ 	.resource	= ts72xx_eth_resource,
+ };
+ 
++/* Watchdog resource */
++
++static struct resource ts72xx_watchdog_resources[] = {
++  [0] = {
++    .start  = TS72XX_WATCHDOG_CONTROL_PHYS_BASE,
++    .end  = TS72XX_WATCHDOG_CONTROL_PHYS_BASE + 0x0fff,
++    .flags  = IORESOURCE_MEM,
++  },
++  [1] = {
++    .start  = TS72XX_WATCHDOG_FEED_PHYS_BASE,
++    .end  = TS72XX_WATCHDOG_FEED_PHYS_BASE + 0x0fff,
++    .flags  = IORESOURCE_MEM,
++  },
++};
++
++static struct platform_device ts72xx_watchdog_device = {
++	.name = "ts72xx-wdt",
++	.id   = -1,
++	.num_resources  = ARRAY_SIZE(ts72xx_watchdog_resources),
++	.resource = ts72xx_watchdog_resources,
++};
++
++/* MAX197 (8 * 12-bit A/D converter) option */
++
++static struct resource ts72xx_max197_resources[] = {
++  [0] = { /* sample/control register */
++    .start = TS72XX_MAX197_SAMPLE_PHYS_BASE,
++    .end   = TS72XX_MAX197_SAMPLE_PHYS_BASE + TS72XX_MAX197_SAMPLE_SIZE - 1,
++    .flags = IORESOURCE_MEM,
++  },
++  [1] = { /* busy bit */
++    .start = TS72XX_JUMPERS_MAX197_PHYS_BASE,
++    .end   = TS72XX_JUMPERS_MAX197_PHYS_BASE + TS72XX_JUMPERS_MAX197_SIZE - 1,
++    .flags = IORESOURCE_MEM,
++  }
++};
++
++static struct platform_device ts72xx_max197_device = {
++	.name = "ts72xx-max197",
++	.id   = -1,
++	.dev  = {
++		.platform_data  = NULL,
++	},
++	.num_resources  = ARRAY_SIZE(ts72xx_max197_resources),
++	.resource = ts72xx_max197_resources,
++};
++
++/* SPI bus */
++
++#if defined(CONFIG_SPI_MASTER)
++void tmp124_spi_cs(u32 command) // FGPIO[2]
++{
++  if (command & SPI_CS_ASSERT) {
++    gpio_set_value(EP93XX_GPIO_LINE_MCCD2, 0);
++  } else if (command & SPI_CS_DEASSERT) {
++    gpio_set_value(EP93XX_GPIO_LINE_MCCD2, 1);
++  } else if (command & SPI_CS_INIT) {
++    gpio_direction_output(EP93XX_GPIO_LINE_MCCD2, 1);
++  }
++}
++
++static struct ep93xx_spi_chip tmp124_hw = {
++	.cs_control = tmp124_spi_cs,
++};
++
++static struct spi_board_info ts72xx_spi_bus[] __initdata = {
++	{
++		/* TMP124 */
++		.modalias      = "tmp124",
++		.controller_data = &tmp124_hw,
++		.bus_num       = 1,
++		.chip_select   = 0,
++		.max_speed_hz = 2 * 1000 * 1000,
++	}
++};
++#endif
++
++
+ static void __init ts72xx_init_machine(void)
+ {
+ 	ep93xx_init_devices();
++
++	#if defined(CONFIG_MTD_PHYSMAP) || defined(CONFIG_MTD_PHYSMAP_MODULE)
+ 	if (board_is_ts7200())
+ 		platform_device_register(&ts72xx_flash);
++	#endif
++
+ 	platform_device_register(&ts72xx_rtc_device);
+ 
+ 	memcpy(ts72xx_eth_data.dev_addr,
+ 		(void *)(EP93XX_ETHERNET_BASE + 0x50), 6);
+ 	platform_device_register(&ts72xx_eth_device);
++	platform_device_register(&ts72xx_watchdog_device);
++
++	if (is_max197_installed()) {
++		platform_device_register(&ts72xx_max197_device);
++  }
++
++	#if defined(CONFIG_SPI_MASTER)
++	spi_register_board_info(ts72xx_spi_bus, ARRAY_SIZE(ts72xx_spi_bus));
++	#endif
+ }
+ 
+ MACHINE_START(TS72XX, "Technologic Systems TS-72xx SBC")
+diff --git a/arch/arm/mach-ep93xx/ts72xx_sbcinfo.c b/arch/arm/mach-ep93xx/ts72xx_sbcinfo.c
+new file mode 100644
+index 0000000..7fe4e77
+--- /dev/null
++++ b/arch/arm/mach-ep93xx/ts72xx_sbcinfo.c
+@@ -0,0 +1,147 @@
++/*
++ *  Technologic Systems TS-72XX sbc /proc/driver/sbcinfo entry.
++ *
++ *  Original idea by Liberty Young (Technologic Systems).
++ *
++ *	(c) Copyright 2008  Matthieu Crapet <mcrapet@gmail.com>
++ *
++ *	This program is free software; you can redistribute it and/or
++ *	modify it under the terms of the GNU General Public License
++ *	as published by the Free Software Foundation; either version
++ *	2 of the License, or (at your option) any later version.
++ */
++
++#include <linux/module.h>
++#include <linux/kernel.h>
++#include <linux/init.h>
++#include <linux/proc_fs.h>
++#include <mach/ts72xx.h>
++
++
++struct infos {
++  int model, pld;
++  int option_ad;
++  int option_rs485;
++  unsigned char jumpers[6]; // 0=off,1=on,2=error
++};
++
++static void get_sbcinfo(struct infos *data)
++{
++  void __iomem *p;
++
++  /* Board model */
++  switch (__raw_readb(TS72XX_MODEL_VIRT_BASE)) {
++    case TS72XX_MODEL_TS7200:
++      data->model = 7200;
++      break;
++    case  TS72XX_MODEL_TS7250:
++      data->model = 7250;
++      break;
++    case  TS72XX_MODEL_TS7260:
++      data->model = 7260;
++      break;
++    default:
++      data->model = 0;
++  }
++
++  data->pld = get_ts72xx_pld_version();
++
++  /* A/D converter (8 x 12-bit channels) */
++  if ((data->model == 7200) || (data->model = 7250)) {
++    data->option_ad = is_max197_installed();
++  } else {
++    data->option_ad = 0;
++  }
++
++  /* COM2 RS-485 */
++  if (is_rs485_installed()) {
++    data->option_rs485 = 1;
++  } else {
++    data->option_rs485 = 0;
++  }
++
++  /* jumpers */
++  p = ioremap(TS72XX_JUMPERS_MAX197_PHYS_BASE, TS72XX_JUMPERS_MAX197_SIZE);
++  if (p) {
++    unsigned char c = __raw_readb(p);
++
++    data->jumpers[0] = 2;                // JP1 (bootstrap)
++    data->jumpers[1] = !!(c & 0x01);     // JP2 (enable serial console)
++    data->jumpers[2] = !!(c & 0x02);     // JP3 (flash write enable)
++    data->jumpers[3] = !(c & 0x08);      // JP4 (console on COM2)
++    data->jumpers[4] = !(c & 0x10);      // JP5 (test)
++    data->jumpers[5] = !!(is_jp6_set()); // JP6 (user jumper)
++
++    iounmap(p);
++  } else {
++    data->jumpers[0] = data->jumpers[1] = data->jumpers[2] = 2;
++    data->jumpers[3] = data->jumpers[4] = data->jumpers[5] = 2;
++  }
++
++}
++
++
++static int ts72xx_sbcinfo_read_proc(char *buffer, char **start, off_t offset,
++    int count, int *eof, void *data)
++{
++  int len, size = count;
++  char *p = buffer;
++  struct infos nfo;
++  const char jpc[3] = { 'n', 'y', '?' };
++
++  get_sbcinfo(&nfo);
++  len = scnprintf(p, size,
++      "Model             : TS-%d (PLD rev %c)\n"
++      "Option max197 A/D : %s\n"
++      "Option RS-485     : %s\n"
++      "Jumpers           : JP2=%c JP3=%c JP4=%c JP5=%c JP6=%c\n",
++      nfo.model, nfo.pld + 0x40,
++      (nfo.option_ad ? "yes" : "no"),
++      (nfo.option_rs485 ? "yes" : "no"),
++      jpc[nfo.jumpers[1]], jpc[nfo.jumpers[2]], jpc[nfo.jumpers[3]], jpc[nfo.jumpers[4]],
++      jpc[nfo.jumpers[5]]);
++
++  if (len <= offset + count)
++    *eof = 1;
++
++  *start = buffer + offset;
++  len -= offset;
++
++  if (len > count)
++    len = count;
++  if (len < 0)
++    len = 0;
++
++  return len;
++}
++
++
++static int __init ts72xx_sbcinfo_init(void)
++{
++  struct proc_dir_entry *entry;
++  int ret = 0;
++
++  entry = create_proc_read_entry("driver/sbcinfo", 0,
++      NULL, ts72xx_sbcinfo_read_proc, NULL);
++
++  if (!entry) {
++    printk(KERN_ERR "sbcinfo: can't create /proc/driver/sbcinfo\n");
++    ret = -ENOMEM;
++  }
++
++  return ret;
++}
++
++static void __exit ts72xx_sbcinfo_exit(void)
++{
++  remove_proc_entry("driver/sbcinfo", NULL);
++  return;
++}
++
++module_init(ts72xx_sbcinfo_init);
++module_exit(ts72xx_sbcinfo_exit);
++
++MODULE_AUTHOR("Matthieu Crapet <mcrapet@gmail.com>");
++MODULE_DESCRIPTION("Show information of Technologic Systems TS-72XX sbc");
++MODULE_LICENSE("GPL");
++MODULE_VERSION("1.0");
+diff --git a/arch/arm/mm/discontig.c b/arch/arm/mm/discontig.c
+index c8c0c4b..f336eb1 100644
+--- a/arch/arm/mm/discontig.c
++++ b/arch/arm/mm/discontig.c
+@@ -13,7 +13,7 @@
+ #include <linux/mmzone.h>
+ #include <linux/bootmem.h>
+ 
+-#if MAX_NUMNODES != 4 && MAX_NUMNODES != 16
++#if MAX_NUMNODES != 4 && MAX_NUMNODES != 16 && MAX_NUMNODES != 64 && MAX_NUMNODES != 32
+ # error Fix Me Please
+ #endif
+ 
+@@ -40,6 +40,104 @@ pg_data_t discontig_node_data[MAX_NUMNODES] = {
+   { .bdata = &bootmem_node_data[14] },
+   { .bdata = &bootmem_node_data[15] },
+ #endif
++
++#if MAX_NUMNODES == 32
++  { .bdata = &bootmem_node_data[4] },
++  { .bdata = &bootmem_node_data[5] },
++  { .bdata = &bootmem_node_data[6] },
++  { .bdata = &bootmem_node_data[7] },
++  { .bdata = &bootmem_node_data[8] },
++  { .bdata = &bootmem_node_data[9] },
++  { .bdata = &bootmem_node_data[10] },
++  { .bdata = &bootmem_node_data[11] },
++  { .bdata = &bootmem_node_data[12] },
++  { .bdata = &bootmem_node_data[13] },
++  { .bdata = &bootmem_node_data[14] },
++  { .bdata = &bootmem_node_data[15] },
++
++  { .bdata = &bootmem_node_data[16] },
++  { .bdata = &bootmem_node_data[17] },
++  { .bdata = &bootmem_node_data[18] },
++  { .bdata = &bootmem_node_data[19] },
++  { .bdata = &bootmem_node_data[20] },
++  { .bdata = &bootmem_node_data[21] },
++  { .bdata = &bootmem_node_data[22] },
++  { .bdata = &bootmem_node_data[23] },
++  { .bdata = &bootmem_node_data[24] },
++  { .bdata = &bootmem_node_data[25] },
++  { .bdata = &bootmem_node_data[26] },
++  { .bdata = &bootmem_node_data[27] },
++  { .bdata = &bootmem_node_data[28] },
++  { .bdata = &bootmem_node_data[29] },
++  { .bdata = &bootmem_node_data[30] },
++  { .bdata = &bootmem_node_data[31] },
++#endif
++
++#if MAX_NUMNODES == 64
++  { .bdata = &bootmem_node_data[4] },
++  { .bdata = &bootmem_node_data[5] },
++  { .bdata = &bootmem_node_data[6] },
++  { .bdata = &bootmem_node_data[7] },
++  { .bdata = &bootmem_node_data[8] },
++  { .bdata = &bootmem_node_data[9] },
++  { .bdata = &bootmem_node_data[10] },
++  { .bdata = &bootmem_node_data[11] },
++  { .bdata = &bootmem_node_data[12] },
++  { .bdata = &bootmem_node_data[13] },
++  { .bdata = &bootmem_node_data[14] },
++  { .bdata = &bootmem_node_data[15] },
++
++  { .bdata = &bootmem_node_data[16] },
++  { .bdata = &bootmem_node_data[17] },
++  { .bdata = &bootmem_node_data[18] },
++  { .bdata = &bootmem_node_data[19] },
++  { .bdata = &bootmem_node_data[20] },
++  { .bdata = &bootmem_node_data[21] },
++  { .bdata = &bootmem_node_data[22] },
++  { .bdata = &bootmem_node_data[23] },
++  { .bdata = &bootmem_node_data[24] },
++  { .bdata = &bootmem_node_data[25] },
++  { .bdata = &bootmem_node_data[26] },
++  { .bdata = &bootmem_node_data[27] },
++  { .bdata = &bootmem_node_data[28] },
++  { .bdata = &bootmem_node_data[29] },
++  { .bdata = &bootmem_node_data[30] },
++  { .bdata = &bootmem_node_data[31] },
++
++  { .bdata = &bootmem_node_data[32] },
++  { .bdata = &bootmem_node_data[33] },
++  { .bdata = &bootmem_node_data[34] },
++  { .bdata = &bootmem_node_data[35] },
++  { .bdata = &bootmem_node_data[36] },
++  { .bdata = &bootmem_node_data[37] },
++  { .bdata = &bootmem_node_data[38] },
++  { .bdata = &bootmem_node_data[39] },
++  { .bdata = &bootmem_node_data[40] },
++  { .bdata = &bootmem_node_data[41] },
++  { .bdata = &bootmem_node_data[42] },
++  { .bdata = &bootmem_node_data[43] },
++  { .bdata = &bootmem_node_data[44] },
++  { .bdata = &bootmem_node_data[45] },
++  { .bdata = &bootmem_node_data[46] },
++  { .bdata = &bootmem_node_data[47] },
++
++  { .bdata = &bootmem_node_data[48] },
++  { .bdata = &bootmem_node_data[49] },
++  { .bdata = &bootmem_node_data[50] },
++  { .bdata = &bootmem_node_data[51] },
++  { .bdata = &bootmem_node_data[52] },
++  { .bdata = &bootmem_node_data[53] },
++  { .bdata = &bootmem_node_data[54] },
++  { .bdata = &bootmem_node_data[55] },
++  { .bdata = &bootmem_node_data[56] },
++  { .bdata = &bootmem_node_data[57] },
++  { .bdata = &bootmem_node_data[58] },
++  { .bdata = &bootmem_node_data[59] },
++  { .bdata = &bootmem_node_data[60] },
++  { .bdata = &bootmem_node_data[61] },
++  { .bdata = &bootmem_node_data[62] },
++  { .bdata = &bootmem_node_data[63] },
++#endif
+ };
+ 
+ EXPORT_SYMBOL(discontig_node_data);
+diff --git a/arch/arm/mm/init.c b/arch/arm/mm/init.c
+index 30a69d6..a38c66f 100644
+--- a/arch/arm/mm/init.c
++++ b/arch/arm/mm/init.c
+@@ -43,26 +43,18 @@ static struct meminfo meminfo = { 0, };
+ void show_mem(void)
+ {
+ 	int free = 0, total = 0, reserved = 0;
+-	int shared = 0, cached = 0, slab = 0, node, i;
++	int shared = 0, cached = 0, slab = 0, node, i, k;
+ 	struct meminfo * mi = &meminfo;
+ 
+ 	printk("Mem-info:\n");
+ 	show_free_areas();
+ 	for_each_online_node(node) {
+-		pg_data_t *n = NODE_DATA(node);
+-		struct page *map = n->node_mem_map - n->node_start_pfn;
+-
+ 		for_each_nodebank (i,mi,node) {
+-			unsigned int pfn1, pfn2;
+-			struct page *page, *end;
+-
+-			pfn1 = __phys_to_pfn(mi->bank[i].start);
+-			pfn2 = __phys_to_pfn(mi->bank[i].size + mi->bank[i].start);
++			struct page *page;
+ 
+-			page = map + pfn1;
+-			end  = map + pfn2;
++      page = NODE_MEM_MAP(node);
+ 
+-			do {
++      for (k=0; k<NODE_DATA(node)->node_present_pages; k++) {
+ 				total++;
+ 				if (PageReserved(page))
+ 					reserved++;
+@@ -75,7 +67,7 @@ void show_mem(void)
+ 				else
+ 					shared += page_count(page) - 1;
+ 				page++;
+-			} while (page < end);
++			};
+ 		}
+ 	}
+ 
+@@ -94,11 +86,19 @@ void show_mem(void)
+  * the end, we won't clash.
+  */
+ static unsigned int __init
+-find_bootmap_pfn(int node, struct meminfo *mi, unsigned int bootmap_pages)
++find_bootmap_pfn(int node, struct meminfo *mi, unsigned int bootmap_pages, int initrd_node)
+ {
+ 	unsigned int start_pfn, bank, bootmap_pfn;
+ 
+-	start_pfn   = PAGE_ALIGN(__pa(&_end)) >> PAGE_SHIFT;
++	if (node == initrd_node) {
++	  /* push start_pfn past the ramdisk */
++	  start_pfn = (phys_initrd_start + phys_initrd_size) >> PAGE_SHIFT;
++	  /* if (unlikely) not an even page length, round up by a page */
++	  start_pfn = ((phys_initrd_start + phys_initrd_size) & PAGE_MASK ? start_pfn+1 : start_pfn);
++	} else {
++	  start_pfn   = PAGE_ALIGN(__pa(&_end)) >> PAGE_SHIFT;
++	}
++
+ 	bootmap_pfn = 0;
+ 
+ 	for_each_nodebank(bank, mi, node) {
+@@ -220,7 +220,7 @@ bootmem_init_node(int node, int initrd_node, struct meminfo *mi)
+ 	 * Allocate the bootmem bitmap page.
+ 	 */
+ 	boot_pages = bootmem_bootmap_pages(end_pfn - start_pfn);
+-	boot_pfn = find_bootmap_pfn(node, mi, boot_pages);
++	boot_pfn = find_bootmap_pfn(node, mi, boot_pages, initrd_node);
+ 
+ 	/*
+ 	 * Initialise the bootmem allocator for this node, handing the
+diff --git a/arch/arm/mm/proc-arm920.S b/arch/arm/mm/proc-arm920.S
+index 28cdb06..be31476 100644
+--- a/arch/arm/mm/proc-arm920.S
++++ b/arch/arm/mm/proc-arm920.S
+@@ -198,7 +198,7 @@ ENTRY(arm920_coherent_kern_range)
+  */
+ ENTRY(arm920_coherent_user_range)
+ 	bic	r0, r0, #CACHE_DLINESIZE - 1
+-1:	mcr	p15, 0, r0, c7, c10, 1		@ clean D entry
++1:	mcr	p15, 0, r0, c7, c14, 1		@ clean+invalidate D entry
+ 	mcr	p15, 0, r0, c7, c5, 1		@ invalidate I entry
+ 	add	r0, r0, #CACHE_DLINESIZE
+ 	cmp	r0, r1
+@@ -395,6 +395,9 @@ __arm920_setup:
+ 	mrc	p15, 0, r0, c1, c0		@ get control register v4
+ 	bic	r0, r0, r5
+ 	orr	r0, r0, r6
++#ifdef CONFIG_CR1_NFBIT
++        orr     r0, r0, #0x40000000             @ set nF
++#endif
+ 	mov	pc, lr
+ 	.size	__arm920_setup, . - __arm920_setup
+ 
+diff --git a/drivers/ata/Kconfig b/drivers/ata/Kconfig
+index 11c8c19..19ef945 100644
+--- a/drivers/ata/Kconfig
++++ b/drivers/ata/Kconfig
+@@ -725,5 +725,25 @@ config PATA_BF54X
+ 
+ 	  If unsure, say N.
+ 
++config PATA_TS72XX
++	bool "TS72XX ATA support"
++	depends on ARCH_EP93XX && MACH_TS72XX
++	help
++	  This option enables support for ATA devices on Technologic Systems SBC.
++
++config PATA_TS7200_CF
++	tristate "TS7200 Compact Flash support"
++	depends on PATA_TS72XX
++	help
++	  This option enables support for the compact flash control on
++	  Technologic System TS-7200 SBC.
++
++config PATA_TS9600
++	tristate "TS9600 IDE interface support"
++	depends on PATA_TS72XX && BLK_DEV_IDE_TS9600 != y
++	help
++	  This option enables support for Technologic Systems TS-9600 PC/104 IDE interface.
++
+ endif # ATA_SFF
++
+ endif # ATA
+diff --git a/drivers/ata/Makefile b/drivers/ata/Makefile
+index 674965f..f496c63 100644
+--- a/drivers/ata/Makefile
++++ b/drivers/ata/Makefile
+@@ -72,6 +72,9 @@ obj-$(CONFIG_PATA_BF54X)	+= pata_bf54x.o
+ obj-$(CONFIG_PATA_PLATFORM)	+= pata_platform.o
+ obj-$(CONFIG_PATA_OF_PLATFORM)	+= pata_of_platform.o
+ obj-$(CONFIG_PATA_ICSIDE)	+= pata_icside.o
++obj-$(CONFIG_PATA_TS72XX)	+= pata_ts72xx.o
++obj-$(CONFIG_PATA_TS7200_CF)	+= pata_ts7200_cf.o
++obj-$(CONFIG_PATA_TS9600)	+= pata_ts9600.o
+ # Should be last but two libata driver
+ obj-$(CONFIG_PATA_ACPI)		+= pata_acpi.o
+ # Should be last but one libata driver
+diff --git a/drivers/ata/pata_ts7200_cf.c b/drivers/ata/pata_ts7200_cf.c
+new file mode 100644
+index 0000000..a08aedf
+--- /dev/null
++++ b/drivers/ata/pata_ts7200_cf.c
+@@ -0,0 +1,85 @@
++/*
++ *  Technologic Systems TS-7200 Compact Flash PATA device driver.
++ *
++ * (c) Copyright 2008  Matthieu Crapet <mcrapet@gmail.com>
++ *
++ * This program is free software; you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License as published by
++ * the Free Software Foundation; either version 2 of the License, or
++ * (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ */
++
++#include <linux/kernel.h>
++#include <linux/module.h>
++#include <linux/libata.h>
++#include <scsi/scsi_host.h>
++#include <linux/platform_device.h>
++#include <linux/dma-mapping.h>
++
++#include <asm/io.h>
++#include <asm/irq.h>
++#include <mach/hardware.h>
++
++#define DRV_NAME  "pata_ts7200_cf"
++#define DRV_VERSION "0.2"
++
++static struct resource ts7200_cf_resources[] = {
++  [0] = {
++    .start = TS7200_CF_CMD_PHYS_BASE,
++    .end   = TS7200_CF_CMD_PHYS_BASE + 8,
++    .flags = IORESOURCE_MEM,
++  },
++  [1] = {
++    .start = TS7200_CF_AUX_PHYS_BASE,
++    .end   = TS7200_CF_AUX_PHYS_BASE + 1,
++    .flags = IORESOURCE_MEM,
++  },
++  [2] = {
++    .start = TS7200_CF_DATA_PHYS_BASE,
++    .end   = TS7200_CF_DATA_PHYS_BASE + 2,
++    .flags = IORESOURCE_MEM,
++  },
++  [3] = {
++    .start = IRQ_EP93XX_EXT0, /* pin 103 of EP9301 */
++    .end   = IRQ_EP93XX_EXT0,
++    .flags = IORESOURCE_IRQ,
++  }
++};
++
++
++static struct platform_device ts7200_cf_device = {
++  .name = "ts72xx-ide",
++  .id = 0,
++  .dev  = {
++		.dma_mask = &ts7200_cf_device.dev.coherent_dma_mask,
++		.coherent_dma_mask = DMA_BIT_MASK(32),
++  },
++  .num_resources  = ARRAY_SIZE(ts7200_cf_resources),
++  .resource = ts7200_cf_resources,
++};
++
++
++static __init int pata_ts7200_cf_init(void)
++{
++  return (board_is_ts7200()) ? \
++    platform_device_register(&ts7200_cf_device) : -ENODEV;
++}
++
++static __exit void pata_ts7200_cf_exit(void)
++{
++  platform_device_unregister(&ts7200_cf_device);
++}
++
++module_init(pata_ts7200_cf_init);
++module_exit(pata_ts7200_cf_exit);
++
++MODULE_AUTHOR("Matthieu Crapet <mcrapet@gmail.com>");
++MODULE_DESCRIPTION("TS-7200 CF PATA device driver");
++MODULE_LICENSE("GPL");
++MODULE_VERSION(DRV_VERSION);
+diff --git a/drivers/ata/pata_ts72xx.c b/drivers/ata/pata_ts72xx.c
+new file mode 100644
+index 0000000..a2c12d1
+--- /dev/null
++++ b/drivers/ata/pata_ts72xx.c
+@@ -0,0 +1,155 @@
++/*
++ *  TS-72XX PATA driver for Technologic Systems boards.
++ *
++ *  Based on pata_platform.c by Paul Mundt &
++ *      Alessandro Zummo <a.zummo@towertech.it>
++ *  and old pata-ts72xx.c by Alessandro Zummo <a.zummo@towertech.it>
++ *
++ *	(c) Copyright 2008  Matthieu Crapet <mcrapet@gmail.com>
++ *
++ *	This program is free software; you can redistribute it and/or
++ *	modify it under the terms of the GNU General Public License
++ *	as published by the Free Software Foundation; either version
++ *	2 of the License, or (at your option) any later version.
++ */
++
++#include <linux/kernel.h>
++#include <linux/module.h>
++#include <linux/platform_device.h>
++#include <linux/interrupt.h>
++#include <scsi/scsi_host.h>
++#include <linux/ata.h>
++#include <linux/libata.h>
++
++#define DRV_NAME  "pata_ts72xx"
++#define DRV_VERSION "2.0"
++
++
++/*
++ * Provide our own set_mode() as we don't want to change anything that has
++ * already been configured..
++ */
++static int ts72xx_set_mode(struct ata_link *link, struct ata_device **unused)
++{
++  struct ata_device *dev;
++
++  ata_link_for_each_dev(dev, link) {
++    if (ata_dev_enabled(dev)) {
++      /* We don't really care */
++      dev->pio_mode = dev->xfer_mode = XFER_PIO_0;
++      dev->xfer_shift = ATA_SHIFT_PIO;
++      dev->flags |= ATA_DFLAG_PIO;
++      ata_dev_printk(dev, KERN_INFO, "configured for PIO\n");
++    }
++  }
++  return 0;
++}
++
++static struct scsi_host_template ts72xx_sht = {
++  ATA_PIO_SHT(DRV_NAME),
++};
++
++static struct ata_port_operations ts72xx_port_ops = {
++  .inherits     = &ata_sff_port_ops,
++  .set_mode     = ts72xx_set_mode,
++};
++
++static __devinit int ts72xx_pata_probe(struct platform_device *pdev)
++{
++  struct ata_host *host;
++  struct ata_port *ap;
++  int irq;
++
++  struct resource *pata_cmd  = platform_get_resource(pdev, IORESOURCE_MEM, 0);
++  struct resource *pata_aux  = platform_get_resource(pdev, IORESOURCE_MEM, 1);
++  struct resource *pata_data = platform_get_resource(pdev, IORESOURCE_MEM, 2);
++
++  if (!pata_cmd || !pata_aux || !pata_data) {
++    dev_err(&pdev->dev, "missing resource(s)\n");
++    return -EINVAL;
++  }
++
++  irq = platform_get_irq(pdev, 0);
++  if (irq < 0)
++    irq = 0;  /* no irq */
++
++  /*
++   * Now that that's out of the way, wire up the port
++   */
++  host = ata_host_alloc(&pdev->dev, 1);
++  if (!host)
++    return -ENOMEM;
++  ap = host->ports[0];
++
++  ap->ops = &ts72xx_port_ops;
++  ap->pio_mask = 0x1f; /* PIO0-4 */
++  ap->flags |= ATA_FLAG_SLAVE_POSS;
++
++  /*
++   * Use polling mode if there's no IRQ
++   */
++  if (!irq) {
++    ap->flags |= ATA_FLAG_PIO_POLLING;
++    ata_port_desc(ap, "no IRQ, using PIO polling");
++  }
++
++  ap->ioaddr.cmd_addr = devm_ioremap(&pdev->dev, pata_cmd->start,
++      pata_cmd->end - pata_cmd->start + 1);
++  ap->ioaddr.ctl_addr = devm_ioremap(&pdev->dev, pata_aux->start,
++      pata_aux->end - pata_aux->start + 1);
++
++  if (!ap->ioaddr.cmd_addr || !ap->ioaddr.ctl_addr) {
++    dev_err(&pdev->dev, "failed to map IO/CTL base\n");
++    return -ENOMEM;
++  }
++
++  ap->ioaddr.altstatus_addr = ap->ioaddr.ctl_addr;
++
++  ata_sff_std_ports(&ap->ioaddr);
++  ap->ioaddr.data_addr = devm_ioremap(&pdev->dev, pata_data->start,
++      pata_data->end - pata_data->start + 1);
++
++  ata_port_desc(ap, "mmio cmd 0x%llx ctl 0x%llx",
++      (unsigned long long)pata_cmd->start,
++      (unsigned long long)pata_aux->start);
++
++  return ata_host_activate(host, irq, irq ? ata_sff_interrupt : NULL,
++      0 /* irq flags */, &ts72xx_sht);
++}
++
++static __devexit int ts72xx_pata_remove(struct platform_device *pdev)
++{
++  struct device *dev = &pdev->dev;
++  struct ata_host *host = dev_get_drvdata(dev);
++
++  ata_host_detach(host);
++
++  return 0;
++}
++
++static struct platform_driver ts72xx_pata_platform_driver = {
++  .probe    = ts72xx_pata_probe,
++  .remove   = __devexit_p(ts72xx_pata_remove),
++  .driver = {
++    .name   = "ts72xx-ide",
++    .owner  = THIS_MODULE,
++  },
++};
++
++static int __init ts72xx_pata_init(void)
++{
++  return platform_driver_register(&ts72xx_pata_platform_driver);
++}
++
++static void __exit ts72xx_pata_exit(void)
++{
++  platform_driver_unregister(&ts72xx_pata_platform_driver);
++}
++
++MODULE_AUTHOR("Matthieu Crapet <mcrapet@gmail.com>");
++MODULE_DESCRIPTION("low-level driver for TS-72xx device PATA");
++MODULE_LICENSE("GPL");
++MODULE_VERSION(DRV_VERSION);
++
++module_init(ts72xx_pata_init);
++module_exit(ts72xx_pata_exit);
+diff --git a/drivers/ata/pata_ts9600.c b/drivers/ata/pata_ts9600.c
+new file mode 100644
+index 0000000..b7348d2
+--- /dev/null
++++ b/drivers/ata/pata_ts9600.c
+@@ -0,0 +1,88 @@
++/*
++ *  Technologic Systems TS-9600 PATA device driver.
++ *
++ * (c) Copyright 2008  Matthieu Crapet <mcrapet@gmail.com>
++ *
++ * This program is free software; you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License as published by
++ * the Free Software Foundation; either version 2 of the License, or
++ * (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ */
++
++#include <linux/kernel.h>
++#include <linux/module.h>
++#include <linux/libata.h>
++#include <scsi/scsi_host.h>
++#include <linux/platform_device.h>
++#include <linux/dma-mapping.h>
++
++#include <asm/io.h>
++#include <asm/irq.h>
++#include <mach/hardware.h>
++
++#define DRV_NAME  "pata_ts9600"
++#define DRV_VERSION "0.2"
++
++#define TS9600_IDE_IO   (TS72XX_PC104_8BIT_IO_PHYS_BASE + 0x1F0)
++#define TS9600_IDE_DATA (TS72XX_PC104_16BIT_IO_PHYS_BASE + 0x1F0)
++#define TS9600_IDE_IRQ  IRQ_EP93XX_EXT3  // IRQ7 (no other possibility for arm)
++
++static struct resource ts9600_resources[] = {
++  [0] = {
++    .start = TS9600_IDE_IO,
++    .end   = TS9600_IDE_IO + 8,
++    .flags = IORESOURCE_MEM,
++  },
++  [1] = {
++    .start = TS9600_IDE_IO + 0x206,
++    .end   = TS9600_IDE_IO + 0x206 + 1,
++    .flags = IORESOURCE_MEM,
++  },
++  [2] = {
++    .start = TS9600_IDE_DATA,
++    .end   = TS9600_IDE_DATA + 2,
++    .flags = IORESOURCE_MEM,
++  },
++  [3] = {
++    .start = TS9600_IDE_IRQ,
++    .end   = TS9600_IDE_IRQ,
++    .flags = IORESOURCE_IRQ,
++  }
++};
++
++
++static struct platform_device ts9600_device = {
++  .name = "ts72xx-ide",
++  .id = 9600,
++  .dev  = {
++		.dma_mask = &ts9600_device.dev.coherent_dma_mask,
++		.coherent_dma_mask = DMA_BIT_MASK(32),
++  },
++  .num_resources  = ARRAY_SIZE(ts9600_resources),
++  .resource = ts9600_resources,
++};
++
++
++static __init int pata_ts9600_init(void)
++{
++  return platform_device_register(&ts9600_device);
++}
++
++static __exit void pata_ts9600_exit(void)
++{
++  platform_device_unregister(&ts9600_device);
++}
++
++module_init(pata_ts9600_init);
++module_exit(pata_ts9600_exit);
++
++MODULE_AUTHOR("Matthieu Crapet <mcrapet@gmail.com>");
++MODULE_DESCRIPTION("TS-9600 PATA device driver");
++MODULE_LICENSE("GPL");
++MODULE_VERSION(DRV_VERSION);
+diff --git a/drivers/input/keyboard/Kconfig b/drivers/input/keyboard/Kconfig
+index efd70a9..68df990 100644
+--- a/drivers/input/keyboard/Kconfig
++++ b/drivers/input/keyboard/Kconfig
+@@ -323,4 +323,47 @@ config KEYBOARD_SH_KEYSC
+ 
+ 	  To compile this driver as a module, choose M here: the
+ 	  module will be called sh_keysc.
++
++config KEYBOARD_EP93XX
++	tristate "EP93xx GPIO matrix keypad support"
++	depends on ARCH_EP93XX
++	help
++	  This driver implements supports for a matrix keypad connected
++	  to GPIO port B. Maximum of 4 rows and 4 cols are supported
++	  (using up to 4 interrupts).
++	  This is implemented as a platform driver.
++
++	  To compile this driver as a module, choose M here: the
++	  module will be called ep93xx-keypad.
++
++if KEYBOARD_EP93XX
++	
++choice
++	prompt "Keypad type"
++	default TS72XX_DIO_4X4_KEYPAD
++
++config TS72XX_DIO_3X4_KEYPAD
++	tristate "TS-72xx 3x4 matrix keypad"
++	depends on MACH_TS72XX
++	help
++	  This a 12 keys (4 rows, 3 cols using DIO_0-6) keypad with the following layout:
++	  1 2 3
++	  4 5 6
++	  7 8 9
++	  * 0 #
++
++config TS72XX_DIO_4X4_KEYPAD
++	tristate "TS-72xx 4x4 matrix keypad"
++	depends on MACH_TS72XX
++	help
++	  This a 16 keys (4 rows, 4 cols using DIO_0-7) keypad with the following layout:
++	  7 8 9 F
++	  4 5 6 E
++	  1 2 3 D
++	  A 0 B C
++
++endchoice
++
++endif # KEYBOARD_EP93XX
++
+ endif
+diff --git a/drivers/input/keyboard/Makefile b/drivers/input/keyboard/Makefile
+index 0edc8f2..550adc7 100644
+--- a/drivers/input/keyboard/Makefile
++++ b/drivers/input/keyboard/Makefile
+@@ -27,3 +27,7 @@ obj-$(CONFIG_KEYBOARD_HP7XX)		+= jornada720_kbd.o
+ obj-$(CONFIG_KEYBOARD_MAPLE)		+= maple_keyb.o
+ obj-$(CONFIG_KEYBOARD_BFIN)		+= bf54x-keys.o
+ obj-$(CONFIG_KEYBOARD_SH_KEYSC)		+= sh_keysc.o
++obj-$(CONFIG_KEYBOARD_EP93XX)		+= ep93xx-keypad.o
++
++obj-$(CONFIG_TS72XX_DIO_3X4_KEYPAD)		+= ts72xx_dio_3x4.o
++obj-$(CONFIG_TS72XX_DIO_4X4_KEYPAD)		+= ts72xx_dio_4x4.o
+diff --git a/drivers/input/keyboard/ep93xx-keypad.c b/drivers/input/keyboard/ep93xx-keypad.c
+new file mode 100644
+index 0000000..7259f38
+--- /dev/null
++++ b/drivers/input/keyboard/ep93xx-keypad.c
+@@ -0,0 +1,291 @@
++/*
++ *  EP93xx "GPIO Port B" input keypad driver
++ *
++ * (c) Copyright 2008  Matthieu Crapet <mcrapet@gmail.com>
++ * Based on OMAP Keypad Driver (omap-keypad.c)
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License
++ * as published by the Free Software Foundation; either version
++ * 2 of the License, or (at your option) any later version.
++ */
++
++#include <linux/module.h>
++#include <linux/kernel.h>
++#include <linux/init.h>
++#include <linux/interrupt.h>
++#include <linux/delay.h>
++#include <linux/input.h>
++#include <linux/platform_device.h>
++#include <linux/irq.h>
++#include <mach/hardware.h>
++#include <mach/gpio.h>
++
++#include <mach/ep93xx-keypad.h>
++
++#define DRV_NAME_PREFIX "ep93xx_keypad: "
++#define DRV_VERSION "2.0"
++
++/* We choose port B */
++#define EP93XX_GPIO_X_DATA      EP93XX_GPIO_B_DATA
++#define EP93XX_GPIO_LINE_X      EP93XX_GPIO_LINE_B
++
++struct ep93xx_gpio_portx_keypad {
++  u8 rows;
++  u8 cols;
++  int irqs[EP93XX_PORTX_MAXROW];
++  u8 mask_input;
++  u8 mask_output;
++  u8 row_trigger, col_trigger;
++  u8 mask_input_trigger;
++  struct timer_list timer;
++  struct input_dev *input;
++  struct ep93xx_gpio_portx_keypad_platform_data *rsc;
++};
++
++static void ep93xx_gpio_portx_tasklet(unsigned long);
++static void ep93xx_gpio_portx_timer(unsigned long);
++
++DECLARE_TASKLET_DISABLED(kp_tasklet, ep93xx_gpio_portx_tasklet, 0);
++
++
++static void ep93xx_gpio_portx_timer(unsigned long data)
++{
++  struct ep93xx_gpio_portx_keypad *ctx = (struct ep93xx_gpio_portx_keypad *)data;
++  int i;
++
++  for (i = 0; i < ctx->rows; i++)
++    enable_irq(ctx->irqs[i]);
++}
++
++
++static void ep93xx_gpio_portx_tasklet(unsigned long data)
++{
++  struct ep93xx_gpio_portx_keypad *ctx = (struct ep93xx_gpio_portx_keypad *)data;
++  int i, j;
++  u8 save;
++
++  /* Save data register */
++  save = __raw_readb(EP93XX_GPIO_X_DATA);
++
++  /* Make sure row is still 0 */
++  if (!(save & ctx->mask_input_trigger)) {
++
++    for (i = 0; i < ctx->cols; i++) {
++      for (j = 0; j < ctx->cols; j++) {
++        if (i == j)
++          gpio_set_value(EP93XX_GPIO_LINE_X(ctx->rsc->gpio_cols[j]), 1); //high
++        else
++          gpio_set_value(EP93XX_GPIO_LINE_X(ctx->rsc->gpio_cols[j]), 0); //low
++      }
++
++      if (__raw_readb(EP93XX_GPIO_X_DATA) & ctx->mask_input_trigger) {
++        ctx->col_trigger = i;
++        //printk("=>key col=%d, row=%d |%x\n", i, ctx->row_trigger, ctx->rsc->keycodes[ctx->row_trigger][i]);
++        input_report_key(ctx->input, ctx->rsc->keycodes[ctx->row_trigger][ctx->col_trigger], 1);
++        input_sync(ctx->input);
++      }
++    }
++
++  } else { // key released
++    input_report_key(ctx->input, ctx->rsc->keycodes[ctx->row_trigger][ctx->col_trigger], 0);
++    input_sync(ctx->input);
++  }
++
++  /* Restore all outputs to 0 */
++  __raw_writeb(save, EP93XX_GPIO_X_DATA);
++
++  /* Wait a little before enabling IRQ again */
++  mod_timer(&ctx->timer, jiffies + HZ/10);
++}
++
++
++/* Interrupt handler */
++static irqreturn_t ep93xx_gpio_portx_key_int(int irq, void *dev_id)
++{
++  struct ep93xx_gpio_portx_keypad *ctx = dev_id;
++  int i;
++
++  for (i = 0; i < ctx->rows; i++)
++    disable_irq(ctx->irqs[i]);
++
++  ctx->mask_input_trigger = 0;
++  for (i = 0; i < ctx->rows; i++) {
++    if (gpio_to_irq(EP93XX_GPIO_LINE_X(ctx->rsc->gpio_rows[i])) == irq) {
++      ctx->row_trigger = i;
++      ctx->mask_input_trigger = (1 << ctx->rsc->gpio_rows[i]);
++      break;
++    }
++  }
++
++  // deferred-execution method
++  tasklet_schedule(&kp_tasklet);
++
++  return IRQ_HANDLED;
++}
++
++
++static int __devinit ep93xx_keypad_probe(struct platform_device *pdev)
++{
++  struct ep93xx_gpio_portx_keypad *ctx;
++  struct input_dev *input_dev;
++  int i, j, ret, irq_idx;
++  struct ep93xx_gpio_portx_keypad_platform_data *pdata =  pdev->dev.platform_data;
++
++  const char *irq_names[EP93XX_PORTX_MAXROW] = {
++    "kp-row0", "kp-row1", "kp-row2", "kp-row3" };
++
++  if (pdata == NULL) {
++    return -EINVAL;
++  }
++
++  if (!pdata->nr_rows || !pdata->nr_cols ||
++      (pdata->nr_rows > EP93XX_PORTX_MAXROW) ||
++      (pdata->nr_cols > EP93XX_PORTX_MAXCOL)) {
++    printk(KERN_ERR DRV_NAME_PREFIX "No rows, cols from pdata\n");
++    return -EINVAL;
++  }
++
++  ctx = kzalloc(sizeof(struct ep93xx_gpio_portx_keypad), GFP_KERNEL);
++  if (!ctx) {
++    return -ENOMEM;
++  }
++
++  input_dev = input_allocate_device();
++  if (!input_dev) {
++    kfree(ctx);
++    return -ENOMEM;
++  }
++
++  platform_set_drvdata(pdev, ctx);
++
++  ctx->input = input_dev;
++  ctx->rsc   = pdata;
++  ctx->rows  = pdata->nr_rows;
++  ctx->cols  = pdata->nr_cols;
++
++  input_dev->evbit[0] = BIT(EV_KEY); // | BIT(EV_REP);
++
++  for (i = 0; i < pdata->nr_rows; i++) {
++    for (j = 0; j < pdata->nr_cols; j++) {
++      int code = pdata->keycodes[i][j];
++      if (code > 0)
++        set_bit(code, input_dev->keybit);
++    }
++  }
++  __clear_bit(KEY_RESERVED, input_dev->keybit);
++
++  input_dev->name = "GPIO keypad";
++  input_dev->phys = "ep93xx-keypad/input0";
++  input_dev->dev.parent = &pdev->dev;
++
++  input_dev->id.bustype = BUS_HOST;
++  input_dev->id.vendor  = 0x0001;
++  input_dev->id.product = 0x0001;
++  input_dev->id.version = 0x0100;
++
++  ret = input_register_device(ctx->input);
++  if (ret < 0) {
++    printk(KERN_ERR DRV_NAME_PREFIX "Unable to register input device\n");
++    goto err1;
++  }
++
++  ctx->mask_output = 0;
++  for (i = 0; i < pdata->nr_cols; i++) {
++    ctx->mask_output |= (1 << pdata->gpio_cols[i]);
++    gpio_direction_output(EP93XX_GPIO_LINE_X(pdata->gpio_cols[i]), 0); // low
++  }
++
++  ctx->mask_input = 0;
++  for (i = 0; i < pdata->nr_rows; i++) {
++    ctx->mask_input |= (1 << pdata->gpio_rows[i]);
++    gpio_direction_input(EP93XX_GPIO_LINE_X(pdata->gpio_rows[i]));
++  }
++
++  for (i = 0; i < pdata->nr_rows; i++) {
++    ctx->irqs[i] = gpio_to_irq(EP93XX_GPIO_LINE_X(pdata->gpio_rows[i]));
++    set_irq_type(ctx->irqs[i], IRQ_TYPE_EDGE_FALLING);
++    ep93xx_gpio_int_debounce(ctx->irqs[i], 1); // TODO: create IRQ_TYPE_DEBOUNCE
++
++    ret = request_irq(ctx->irqs[i], ep93xx_gpio_portx_key_int, 0, irq_names[i], ctx);
++    if (ret < 0) {
++      irq_idx = i;
++      printk(KERN_ERR DRV_NAME_PREFIX "request_irq (%d)\n", ctx->irqs[i]);
++      goto err2;
++    }
++  }
++
++  tasklet_enable(&kp_tasklet);
++  kp_tasklet.data = (unsigned long)ctx;
++
++  setup_timer(&ctx->timer, ep93xx_gpio_portx_timer, (unsigned long)ctx);
++
++  return 0;
++
++err2:
++  for (i = 0; i <= irq_idx; i++)
++    free_irq(ctx->irqs[i], ctx);
++  input_unregister_device(input_dev);
++  input_dev = NULL;
++err1:
++  kfree(ctx);
++  input_free_device(input_dev);
++
++  return -EINVAL;
++}
++
++
++static int __devexit ep93xx_keypad_remove(struct platform_device *pdev)
++{
++  struct ep93xx_gpio_portx_keypad *ctx = platform_get_drvdata(pdev);
++  int i;
++
++  for (i = 0; i < ctx->rows; i++) {
++    disable_irq(ctx->irqs[i]);
++    free_irq(ctx->irqs[i], ctx);
++  }
++
++  del_timer_sync(&ctx->timer);
++
++  tasklet_disable(&kp_tasklet);
++  tasklet_kill(&kp_tasklet);
++
++  input_unregister_device(ctx->input);
++  kfree(ctx);
++
++  return 0;
++}
++
++
++#define ep93xx_keypad_suspend NULL
++#define ep93xx_keypad_resume  NULL
++
++static struct platform_driver ep93xx_keypad_driver = {
++  .driver   = {
++    .name = "ep93xx-gpio-keypad",
++    .owner  = THIS_MODULE,
++  },
++  .probe    = ep93xx_keypad_probe,
++  .remove   = __devexit_p(ep93xx_keypad_remove),
++  .suspend  = ep93xx_keypad_suspend,
++  .resume   = ep93xx_keypad_resume,
++};
++
++static int __init ep93xx_keypad_init(void)
++{
++  printk(KERN_INFO DRV_NAME_PREFIX "platform driver v" DRV_VERSION "\n");
++  return platform_driver_register(&ep93xx_keypad_driver);
++}
++
++static void __exit ep93xx_keypad_exit(void)
++{
++  platform_driver_unregister(&ep93xx_keypad_driver);
++}
++
++module_init(ep93xx_keypad_init);
++module_exit(ep93xx_keypad_exit);
++
++MODULE_AUTHOR("Matthieu Crapet <mcrapet@gmail.com>");
++MODULE_DESCRIPTION("EP93xx GPIO port B keypad driver");
++MODULE_LICENSE("GPL");
++MODULE_VERSION(DRV_VERSION);
+diff --git a/drivers/input/keyboard/ts72xx_dio_3x4.c b/drivers/input/keyboard/ts72xx_dio_3x4.c
+new file mode 100644
+index 0000000..8a2e9ee
+--- /dev/null
++++ b/drivers/input/keyboard/ts72xx_dio_3x4.c
+@@ -0,0 +1,65 @@
++/*
++ *  TS-72xx keypad device driver for DIO1 header (DIO_0 thru DIO_7 are using port B)
++ *
++ * (c) Copyright 2008  Matthieu Crapet <mcrapet@gmail.com>
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License
++ * as published by the Free Software Foundation; either version
++ * 2 of the License, or (at your option) any later version.
++ */
++
++#include <linux/module.h>
++#include <linux/kernel.h>
++#include <linux/init.h>
++#include <linux/platform_device.h>
++#include <linux/input.h>
++
++#include <mach/ep93xx-keypad.h>
++
++/* Port B = XX R0 R1 R2 R3 C0 C1 C2
++ * (i.e. col2 is bit 0, row0 is bit 6, ...)
++ */
++static struct ep93xx_gpio_portx_keypad_platform_data kp_portb_3x4 = {
++  .nr_rows = 4,
++  .nr_cols = 3,
++  { { KEY_1, KEY_2, KEY_3 },
++    { KEY_4, KEY_5, KEY_6 },
++    { KEY_7, KEY_8, KEY_9 },
++    { KEY_KPASTERISK, KEY_0, KEY_ENTER }
++  },
++  .gpio_rows = { 6, 5, 4, 3 },
++  .gpio_cols = { 2, 1, 0 },
++};
++
++
++static void ts72xx_dio_release(struct device *dev)
++{
++  // nothing to do (no kfree) because we have static struct
++}
++
++static struct platform_device kp_portb_3x4_device = {
++  .name = "ep93xx-gpio-keypad",
++  .id   = -1, // one instance only
++  .dev    = {
++    .platform_data = &kp_portb_3x4,
++    .release = ts72xx_dio_release,
++  },
++};
++
++static int __init ts72xx_dio_init(void)
++{
++  return platform_device_register(&kp_portb_3x4_device);
++}
++
++static void __exit ts72xx_dio_exit(void)
++{
++  platform_device_unregister(&kp_portb_3x4_device);
++}
++
++module_init(ts72xx_dio_init);
++module_exit(ts72xx_dio_exit);
++
++MODULE_AUTHOR("Matthieu Crapet <mcrapet@gmail.com>");
++MODULE_DESCRIPTION("Platform device 3x4 keypad");
++MODULE_LICENSE("GPL");
+diff --git a/drivers/input/keyboard/ts72xx_dio_4x4.c b/drivers/input/keyboard/ts72xx_dio_4x4.c
+new file mode 100644
+index 0000000..c536003
+--- /dev/null
++++ b/drivers/input/keyboard/ts72xx_dio_4x4.c
+@@ -0,0 +1,65 @@
++/*
++ *  TS-72xx keypad device driver for DIO1 header (DIO_0 thru DIO_7 are using port B)
++ *
++ * (c) Copyright 2008  Matthieu Crapet <mcrapet@gmail.com>
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License
++ * as published by the Free Software Foundation; either version
++ * 2 of the License, or (at your option) any later version.
++ */
++
++#include <linux/module.h>
++#include <linux/kernel.h>
++#include <linux/init.h>
++#include <linux/platform_device.h>
++#include <linux/input.h>
++
++#include <mach/ep93xx-keypad.h>
++
++/* Port B = C0 R3 C1 R2 C2 C3 R1 R0
++ * (i.e. row0 is bit 0, row1 is bit 1, ...)
++ */
++static struct ep93xx_gpio_portx_keypad_platform_data kp_portb_4x4 = {
++  .nr_rows = 4,
++  .nr_cols = 4,
++  { { KEY_7, KEY_8, KEY_9, KEY_F },
++    { KEY_4, KEY_5, KEY_6, KEY_E },
++    { KEY_1, KEY_2, KEY_3, KEY_D },
++    { KEY_A, KEY_0, KEY_B, KEY_C }
++  },
++  .gpio_rows = { 0, 1, 4, 6 },
++  .gpio_cols = { 7, 5, 3, 2 },
++};
++
++
++static void ts72xx_dio_release(struct device *dev)
++{
++  // nothing to do (no kfree) because we have static struct
++}
++
++static struct platform_device kp_portb_4x4_device = {
++  .name = "ep93xx-gpio-keypad",
++  .id   = -1, // one instance only
++  .dev    = {
++    .platform_data = &kp_portb_4x4,
++    .release = ts72xx_dio_release,
++  },
++};
++
++static int __init ts72xx_dio_init(void)
++{
++  return platform_device_register(&kp_portb_4x4_device);
++}
++
++static void __exit ts72xx_dio_exit(void)
++{
++  platform_device_unregister(&kp_portb_4x4_device);
++}
++
++module_init(ts72xx_dio_init);
++module_exit(ts72xx_dio_exit);
++
++MODULE_AUTHOR("Matthieu Crapet <mcrapet@gmail.com>");
++MODULE_DESCRIPTION("Platform device 4x4 keypad");
++MODULE_LICENSE("GPL");
+diff --git a/drivers/misc/Kconfig b/drivers/misc/Kconfig
+index a726f3b..4c696c6 100644
+--- a/drivers/misc/Kconfig
++++ b/drivers/misc/Kconfig
+@@ -475,4 +475,25 @@ config SGI_GRU_DEBUG
+ 	This option enables addition debugging code for the SGI GRU driver. If
+ 	you are unsure, say N.
+ 
++config TS72XX_MAX197
++	tristate "TS-72xx MAX197 support"
++	depends on ARCH_EP93XX && MACH_TS72XX && SYSFS
++	help
++	  Say Y here if to include support for the MAX197 A/D converter
++	  optionally included on Technologic Systems SBCs.
++	  Default acquisition range is [0..5V].
++
++	  To compile this driver as a module, choose M here: the
++	  module will be called ts72xx_max197.
++
++if TS72XX_MAX197
++
++config TS72XX_MAX197_AVERAGE
++	bool "Average measurement"
++	help
++	  Say Y here to enable making average measurement. Default is 1.
++	  See /sys/module/ts72xx_max197/parameters/average file.
++
++endif # TS72XX_MAX197
++
+ endif # MISC_DEVICES
+diff --git a/drivers/misc/Makefile b/drivers/misc/Makefile
+index c6c13f6..d97326f 100644
+--- a/drivers/misc/Makefile
++++ b/drivers/misc/Makefile
+@@ -30,3 +30,4 @@ obj-$(CONFIG_KGDB_TESTS)	+= kgdbts.o
+ obj-$(CONFIG_SGI_XP)		+= sgi-xp/
+ obj-$(CONFIG_SGI_GRU)		+= sgi-gru/
+ obj-$(CONFIG_HP_ILO)		+= hpilo.o
++obj-$(CONFIG_TS72XX_MAX197)	+= ts72xx_max197.o
+diff --git a/drivers/misc/ts72xx_max197.c b/drivers/misc/ts72xx_max197.c
+new file mode 100644
+index 0000000..f989de6
+--- /dev/null
++++ b/drivers/misc/ts72xx_max197.c
+@@ -0,0 +1,235 @@
++/*
++ *  TS-72XX max197 driver for Technologic Systems boards.
++ *
++ * Voltage conversion is taken from adc_logger from Jim Jackson.
++ * (c) Copyright 2008  Matthieu Crapet <mcrapet@gmail.com>
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License
++ * as published by the Free Software Foundation; either version
++ * 2 of the License, or (at your option) any later version.
++ */
++
++#include <linux/kernel.h>
++#include <linux/module.h>
++#include <linux/platform_device.h>
++#include <asm/io.h>
++
++#define DRV_VERSION "0.2"
++#define PFX "ts72xx_max197: "
++
++#define MAX197_RANGE_5_5   1 // [- 5V + 5V]
++#define MAX197_RANGE_10_10 3 // [-10V +10V]
++#define MAX197_RANGE_0_5   0 // [  0V + 5V]
++#define MAX197_RANGE_0_10  2 // [  0V +10V]
++
++#define MAX197_RESET_CHANNEL_CONF(x)       (~(3 << (2*(x))))
++#define MAX197_SET_CHANNEL_CONF(x, range)  ((range) << (2*(x)))
++#define MAX197_GET_CHANNEL_CONF(x, conf)   (((conf) >> (2*(x))) & 3)
++
++struct max197_config
++{
++  void __iomem *control_and_data_register;
++  void __iomem *busy_bit_register;
++  unsigned int channels; // two bits per channels
++};
++
++static struct max197_config conf;
++#ifdef CONFIG_TS72XX_MAX197_AVERAGE
++static ushort average = 1;
++#endif
++
++static ssize_t max197_acquire(struct device *dev,
++    struct device_attribute *attr, char *buf)
++{
++  int range, n;
++  signed short val;
++#ifdef CONFIG_TS72XX_MAX197_AVERAGE
++  int i, total;
++#endif
++
++  n = attr->attr.name[2] - 0x31;
++  range = MAX197_GET_CHANNEL_CONF(n, conf.channels);
++
++#ifdef CONFIG_TS72XX_MAX197_AVERAGE
++  val = 0; total = 0;
++  for (i = 0; i < average; i++) {
++#endif
++
++    __raw_writeb(((range << 3) | n | 0x40) & 0xFF,
++      conf.control_and_data_register);
++    while (__raw_readb(conf.busy_bit_register) & 0x80);
++    val = __raw_readw(conf.control_and_data_register);
++
++    //printk(PFX "%hd/%hd: 0x%04X\n", i+1, average, val);
++
++#ifdef CONFIG_TS72XX_MAX197_AVERAGE
++    total += val;
++  }
++  total /= average;
++  val = (signed short)total;
++#endif
++
++  /* We want three digit precision */
++  switch (range) {
++    case MAX197_RANGE_0_5:
++      val = ((val * 50000/4096)+5)/10;
++      break;
++    case MAX197_RANGE_5_5:
++    case MAX197_RANGE_0_10:
++      val = ((val * 100000/4096)+5)/10;
++      break;
++    case MAX197_RANGE_10_10:
++      val = ((val * 200000/4096)+5)/10;
++      break;
++  }
++
++  return sprintf(buf, "%d.%03d\n", val/1000, abs(val%1000));
++}
++
++static ssize_t max197_configure(struct device *dev,
++    struct device_attribute *attr, const char *buf, size_t len)
++{
++  int n = attr->attr.name[2] - 0x31;
++
++  long val = simple_strtol(buf, NULL, 10);
++  switch (val) {
++    case 10:
++      conf.channels &= MAX197_RESET_CHANNEL_CONF(n);
++      conf.channels |= MAX197_SET_CHANNEL_CONF(n, MAX197_RANGE_0_10);
++      break;
++    case 5:
++      conf.channels &= MAX197_RESET_CHANNEL_CONF(n);
++      conf.channels |= MAX197_SET_CHANNEL_CONF(n, MAX197_RANGE_0_5);
++      break;
++    case -10:
++      conf.channels &= MAX197_RESET_CHANNEL_CONF(n);
++      conf.channels |= MAX197_SET_CHANNEL_CONF(n, MAX197_RANGE_10_10);
++      break;
++    case -5:
++      conf.channels &= MAX197_RESET_CHANNEL_CONF(n);
++      conf.channels |= MAX197_SET_CHANNEL_CONF(n, MAX197_RANGE_5_5);
++      break;
++
++    default:
++      return -EINVAL;
++  }
++
++  return len;
++}
++
++static DEVICE_ATTR(ch1, S_IWUSR | S_IRUGO, max197_acquire, max197_configure);
++static DEVICE_ATTR(ch2, S_IWUSR | S_IRUGO, max197_acquire, max197_configure);
++static DEVICE_ATTR(ch3, S_IWUSR | S_IRUGO, max197_acquire, max197_configure);
++static DEVICE_ATTR(ch4, S_IWUSR | S_IRUGO, max197_acquire, max197_configure);
++static DEVICE_ATTR(ch5, S_IWUSR | S_IRUGO, max197_acquire, max197_configure);
++static DEVICE_ATTR(ch6, S_IWUSR | S_IRUGO, max197_acquire, max197_configure);
++static DEVICE_ATTR(ch7, S_IWUSR | S_IRUGO, max197_acquire, max197_configure);
++static DEVICE_ATTR(ch8, S_IWUSR | S_IRUGO, max197_acquire, max197_configure);
++
++static struct attribute *max197_attributes[] = {
++  &dev_attr_ch1.attr,
++  &dev_attr_ch2.attr,
++  &dev_attr_ch3.attr,
++  &dev_attr_ch4.attr,
++  &dev_attr_ch5.attr,
++  &dev_attr_ch6.attr,
++  &dev_attr_ch7.attr,
++  &dev_attr_ch8.attr,
++  NULL
++};
++
++static struct attribute_group max197_group = {
++  .attrs = max197_attributes,
++  //.name = "channels",
++};
++
++static __devinit int ts72xx_max197_probe(struct platform_device *pdev)
++{
++  int err = 0;
++  struct resource *r_data, *r_busy;
++
++  r_data = platform_get_resource(pdev, IORESOURCE_MEM, 0);
++  r_busy = platform_get_resource(pdev, IORESOURCE_MEM, 1);
++
++  if (!r_data || !r_busy) {
++    dev_err(&pdev->dev, "missing resource(s)\n");
++    return -EINVAL;
++  }
++
++  conf.control_and_data_register = ioremap(r_data->start, r_data->end - r_data->start + 1);
++  if (!conf.control_and_data_register) {
++    err = -ENODEV;
++    goto exit;
++  }
++
++  conf.busy_bit_register = ioremap(r_busy->start, r_busy->end - r_busy->start + 1);
++  if (!conf.busy_bit_register) {
++    err = -ENODEV;
++    goto exit_unmap1;
++  }
++
++  conf.channels =
++    MAX197_SET_CHANNEL_CONF(0, MAX197_RANGE_0_5) |
++    MAX197_SET_CHANNEL_CONF(1, MAX197_RANGE_0_5) |
++    MAX197_SET_CHANNEL_CONF(2, MAX197_RANGE_0_5) |
++    MAX197_SET_CHANNEL_CONF(3, MAX197_RANGE_0_5) |
++    MAX197_SET_CHANNEL_CONF(4, MAX197_RANGE_0_5) |
++    MAX197_SET_CHANNEL_CONF(5, MAX197_RANGE_0_5) |
++    MAX197_SET_CHANNEL_CONF(6, MAX197_RANGE_0_5) |
++    MAX197_SET_CHANNEL_CONF(7, MAX197_RANGE_0_5);
++
++  /* Register sysfs hooks */
++  if ((err = sysfs_create_group(&pdev->dev.kobj, &max197_group)))
++    goto exit_unmap2;
++
++  printk(PFX  "TS-72xx max197 driver, v%s\n", DRV_VERSION);
++  return 0;
++
++exit_unmap2:
++  iounmap(conf.busy_bit_register);
++exit_unmap1:
++  iounmap(conf.control_and_data_register);
++exit:
++  return err;
++}
++
++static int __devexit ts72xx_max197_remove(struct platform_device *pdev)
++{
++  sysfs_remove_group(&pdev->dev.kobj, &max197_group);
++  iounmap(conf.busy_bit_register);
++  iounmap(conf.control_and_data_register);
++  return 0;
++}
++
++static struct platform_driver ts72xx_max197_platform_driver = {
++  .probe    = ts72xx_max197_probe,
++  .remove   = __devexit_p(ts72xx_max197_remove),
++  .driver = {
++    .name   = "ts72xx-max197",
++    .owner  = THIS_MODULE,
++  },
++};
++
++static int __init ts72xx_max197_init(void)
++{
++  return platform_driver_register(&ts72xx_max197_platform_driver);
++}
++
++static void __exit ts72xx_max197_exit(void)
++{
++  platform_driver_unregister(&ts72xx_max197_platform_driver);
++}
++
++#ifdef CONFIG_TS72XX_MAX197_AVERAGE
++module_param(average, ushort, S_IWUSR | S_IRUGO);
++MODULE_PARM_DESC(average, "Allow average measurement (default=1)");
++#endif
++
++MODULE_AUTHOR("Matthieu Crapet <mcrapet@gmail.com>");
++MODULE_DESCRIPTION("TS-72xx max197 driver");
++MODULE_LICENSE("GPL");
++MODULE_VERSION(DRV_VERSION);
++
++module_init(ts72xx_max197_init);
++module_exit(ts72xx_max197_exit);
+diff --git a/drivers/mtd/maps/Kconfig b/drivers/mtd/maps/Kconfig
+index df8e00b..818f53b 100644
+--- a/drivers/mtd/maps/Kconfig
++++ b/drivers/mtd/maps/Kconfig
+@@ -481,6 +481,14 @@ config MTD_OMAP_NOR
+ 	  These boards include the Innovator, H2, H3, OSK, Perseus2, and
+ 	  more.  If you have such a board, say 'Y'.
+ 
++config MTD_TS7200_NOR
++	tristate "Technologic Systems TS-7200 flash 8Mb"
++	depends on MTD_CFI && ARCH_EP93XX
++	help
++	  This provides a driver for the on-board flash of the Technologic
++	  System's TS-7200 board. The 8MB flash is splitted into 3 partitions
++	  which are accessed as separate MTD devices.
++
+ # This needs CFI or JEDEC, depending on the cards found.
+ config MTD_PCI
+ 	tristate "PCI MTD driver"
+diff --git a/drivers/mtd/maps/Makefile b/drivers/mtd/maps/Makefile
+index 6cda6df..8fe5e72 100644
+--- a/drivers/mtd/maps/Makefile
++++ b/drivers/mtd/maps/Makefile
+@@ -65,3 +65,5 @@ obj-$(CONFIG_MTD_PLATRAM)	+= plat-ram.o
+ obj-$(CONFIG_MTD_OMAP_NOR)	+= omap_nor.o
+ obj-$(CONFIG_MTD_INTEL_VR_NOR)	+= intel_vr_nor.o
+ obj-$(CONFIG_MTD_BFIN_ASYNC)	+= bfin-async-flash.o
++obj-$(CONFIG_MTD_TS7200_NOR)	+= ts7200_flash.o
++
+diff --git a/drivers/mtd/maps/ts7200_flash.c b/drivers/mtd/maps/ts7200_flash.c
+new file mode 100644
+index 0000000..9113abd
+--- /dev/null
++++ b/drivers/mtd/maps/ts7200_flash.c
+@@ -0,0 +1,109 @@
++/*
++ * ts7200_flash.c - mapping for TS-7200 SBCs (8mb NOR flash)
++ * No platform_device resource is used here. All is hardcoded.
++ *
++ * (c) Copyright 2006  Matthieu Crapet <mcrapet@gmail.com>
++ * Based on ts5500_flash.c by Sean Young <sean@mess.org>
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License
++ * as published by the Free Software Foundation; either version
++ * 2 of the License, or (at your option) any later version.
++ */
++
++#include <linux/module.h>
++#include <linux/types.h>
++#include <linux/kernel.h>
++#include <linux/init.h>
++#include <asm/io.h>
++#include <asm/sizes.h>
++#include <linux/mtd/mtd.h>
++#include <linux/mtd/map.h>
++#include <linux/mtd/partitions.h>
++
++#define STRINGIFY(x) #x
++#define TOSTRING(x) STRINGIFY(x)
++
++#define WINDOW_ADDR          0x60000000
++#define WINDOW_SIZE          SZ_8M
++#define WINDOW_READABLE_SIZE (WINDOW_SIZE/SZ_1M)
++
++
++static struct mtd_info *mymtd;
++
++static struct map_info ts7200nor_map = {
++  .name = "Full TS-7200 NOR flash",
++  .size = WINDOW_SIZE,
++  .bankwidth = 2,
++  .phys = WINDOW_ADDR,
++};
++
++/*
++ * MTD partitioning stuff
++ */
++#ifdef CONFIG_MTD_PARTITIONS
++static struct mtd_partition static_partitions[] =
++{
++  {
++    .name   = "TS-BOOTROM",
++    .offset = 0,
++    .size   = 0x20000,
++    .mask_flags = MTD_WRITEABLE,  /* force read-only */
++  },
++  {
++    .name   = "RootFS",
++    .offset = 0x20000,
++    .size   = 0x600000,
++  },
++  {
++    .name   = "Redboot",
++    .offset = 0x620000,
++    .size   = MTDPART_SIZ_FULL,   /* up to the end */
++  },
++};
++#endif
++
++int __init init_ts7200nor(void)
++{
++  printk(KERN_NOTICE "TS-7200 flash mapping: %dmo at 0x%x\n", WINDOW_READABLE_SIZE, WINDOW_ADDR);
++
++  ts7200nor_map.virt = ioremap(WINDOW_ADDR, WINDOW_SIZE);
++  if (!ts7200nor_map.virt) {
++    printk("ts7200_flash: failed to ioremap\n");
++    return -EIO;
++  }
++
++  simple_map_init(&ts7200nor_map);
++  mymtd = do_map_probe("cfi_probe", &ts7200nor_map);
++  if (mymtd) {
++    mymtd->owner = THIS_MODULE;
++    add_mtd_device(mymtd);
++#ifdef CONFIG_MTD_PARTITIONS
++    return add_mtd_partitions(mymtd, static_partitions, ARRAY_SIZE(static_partitions));
++#else
++    return 0;
++#endif
++  }
++
++  iounmap((void *)ts7200nor_map.virt);
++  return -ENXIO;
++}
++
++static void __exit cleanup_ts7200nor(void)
++{
++  if (mymtd) {
++    del_mtd_device(mymtd);
++    map_destroy(mymtd);
++  }
++  if (ts7200nor_map.virt) {
++    iounmap((void *)ts7200nor_map.virt);
++    ts7200nor_map.virt = 0;
++  }
++}
++
++module_init(init_ts7200nor);
++module_exit(cleanup_ts7200nor);
++
++MODULE_LICENSE("GPL");
++MODULE_AUTHOR("Matthieu Crapet <mcrapet@gmail.com>");
++MODULE_DESCRIPTION("MTD map driver for TS-7200 board (" TOSTRING(WINDOW_READABLE_SIZE) "MB flash version)");
+diff --git a/drivers/net/Kconfig b/drivers/net/Kconfig
+index 4a11296..2010767 100644
+--- a/drivers/net/Kconfig
++++ b/drivers/net/Kconfig
+@@ -236,6 +236,16 @@ config AX88796_93CX6
+ 	help
+ 	  Select this if your platform comes with an external 93CX6 eeprom.
+ 
++config AX88796_TS_ETH100
++	tristate "Support for TS-ETH100 (TS-72XX SBC)"
++	depends on AX88796 && MACH_TS72XX
++	help
++	  Say Y here if you have a TS-ETH100 PC/104 peripheral.
++	  IRQ numbers and I/O address will be configurated automaticaly.
++	  
++	  To compile this driver as a module, choose M here: the module
++	  will be called ax88796_ts_eth100.     
++
+ config MACE
+ 	tristate "MACE (Power Mac ethernet) support"
+ 	depends on PPC_PMAC && PPC32
+diff --git a/drivers/net/Makefile b/drivers/net/Makefile
+index 7629c90..0be3739 100644
+--- a/drivers/net/Makefile
++++ b/drivers/net/Makefile
+@@ -124,6 +124,7 @@ obj-$(CONFIG_B44) += b44.o
+ obj-$(CONFIG_FORCEDETH) += forcedeth.o
+ obj-$(CONFIG_NE_H8300) += ne-h8300.o
+ obj-$(CONFIG_AX88796) += ax88796.o
++obj-$(CONFIG_AX88796_TS_ETH100) += ax88796_ts_eth100.o
+ 
+ obj-$(CONFIG_TSI108_ETH) += tsi108_eth.o
+ obj-$(CONFIG_MV643XX_ETH) += mv643xx_eth.o
+diff --git a/drivers/net/arm/Kconfig b/drivers/net/arm/Kconfig
+index 8eda6ee..84e6068 100644
+--- a/drivers/net/arm/Kconfig
++++ b/drivers/net/arm/Kconfig
+@@ -44,6 +44,7 @@ config EP93XX_ETH
+ 	tristate "EP93xx Ethernet support"
+ 	depends on ARM && ARCH_EP93XX
+ 	select MII
++	select PHYLIB
+ 	help
+ 	  This is a driver for the ethernet hardware included in EP93xx CPUs.
+ 	  Say Y if you are building a kernel for EP93xx based devices.
+diff --git a/drivers/net/arm/ep93xx_eth.c b/drivers/net/arm/ep93xx_eth.c
+index 1267444..c3f011f 100644
+--- a/drivers/net/arm/ep93xx_eth.c
++++ b/drivers/net/arm/ep93xx_eth.c
+@@ -2,6 +2,7 @@
+  * EP93xx ethernet network device driver
+  * Copyright (C) 2006 Lennert Buytenhek <buytenh@wantstofly.org>
+  * Dedicated to Marija Kulikova.
++ * Copyright (C) 2007 Herbert Valerio Riedel <hvr@gnu.org>
+  *
+  * This program is free software; you can redistribute it and/or modify
+  * it under the terms of the GNU General Public License as published by
+@@ -14,6 +15,7 @@
+ #include <linux/kernel.h>
+ #include <linux/netdevice.h>
+ #include <linux/mii.h>
++#include <linux/phy.h>
+ #include <linux/etherdevice.h>
+ #include <linux/ethtool.h>
+ #include <linux/init.h>
+@@ -37,6 +39,8 @@
+ #define  REG_RXCTL_DEFAULT	0x00073800
+ #define REG_TXCTL		0x0004
+ #define  REG_TXCTL_ENABLE	0x00000001
++#define REG_TESTCTL    0x0008
++#define  REG_TESTCTL_MFDX  0x00000040
+ #define REG_MIICMD		0x0010
+ #define  REG_MIICMD_READ	0x00008000
+ #define  REG_MIICMD_WRITE	0x00004000
+@@ -45,6 +49,9 @@
+ #define  REG_MIISTS_BUSY	0x00000001
+ #define REG_SELFCTL		0x0020
+ #define  REG_SELFCTL_RESET	0x00000001
++#define  REG_SELFCTL_MDCDIV_MSK 0x00007e00
++#define  REG_SELFCTL_MDCDIV_OFS 9
++#define  REG_SELFCTL_PSPRS 0x00000100
+ #define REG_INTEN		0x0024
+ #define  REG_INTEN_TX		0x00000008
+ #define  REG_INTEN_RX		0x00000007
+@@ -174,8 +181,14 @@ struct ep93xx_priv
+ 
+ 	struct net_device_stats	stats;
+ 
+-	struct mii_if_info	mii;
+ 	u8			mdc_divisor;
++  int     phy_supports_mfps:1;
++
++  struct mii_bus    mii_bus;
++  struct phy_device *phy_dev;
++  int     speed;
++  int     duplex;
++  int     link;
+ };
+ 
+ #define rdb(ep, off)		__raw_readb((ep)->base_addr + (off))
+@@ -185,8 +198,6 @@ struct ep93xx_priv
+ #define wrw(ep, off, val)	__raw_writew((val), (ep)->base_addr + (off))
+ #define wrl(ep, off, val)	__raw_writel((val), (ep)->base_addr + (off))
+ 
+-static int ep93xx_mdio_read(struct net_device *dev, int phy_id, int reg);
+-
+ static struct net_device_stats *ep93xx_get_stats(struct net_device *dev)
+ {
+ 	struct ep93xx_priv *ep = netdev_priv(dev);
+@@ -524,6 +535,22 @@ err:
+ 	return 1;
+ }
+ 
++static int ep93xx_mdio_reset(struct mii_bus *bus)
++{
++  struct ep93xx_priv *ep = bus->priv;
++
++  u32 selfctl = rdl(ep, REG_SELFCTL);
++
++  selfctl &= ~(REG_SELFCTL_MDCDIV_MSK | REG_SELFCTL_PSPRS);
++
++  selfctl |= (ep->mdc_divisor - 1) << REG_SELFCTL_MDCDIV_OFS;
++  selfctl |= REG_SELFCTL_PSPRS;
++
++  wrl(ep, REG_SELFCTL, selfctl);
++
++  return 0;
++}
++
+ static int ep93xx_start_hw(struct net_device *dev)
+ {
+ 	struct ep93xx_priv *ep = netdev_priv(dev);
+@@ -542,11 +569,8 @@ static int ep93xx_start_hw(struct net_device *dev)
+ 		return 1;
+ 	}
+ 
+-	wrl(ep, REG_SELFCTL, ((ep->mdc_divisor - 1) << 9));
+-
+-	/* Does the PHY support preamble suppress?  */
+-	if ((ep93xx_mdio_read(dev, ep->mii.phy_id, MII_BMSR) & 0x0040) != 0)
+-		wrl(ep, REG_SELFCTL, ((ep->mdc_divisor - 1) << 9) | (1 << 8));
++  /* The reset cleared REG_SELFCTL, so set the MDC divisor again */
++  ep93xx_mdio_reset(&ep->mii_bus);
+ 
+ 	/* Receive descriptor ring.  */
+ 	addr = ep->descs_dma_addr + offsetof(struct ep93xx_descs, rdesc);
+@@ -631,12 +655,11 @@ static int ep93xx_open(struct net_device *dev)
+ 		return -ENOMEM;
+ 
+ 	if (is_zero_ether_addr(dev->dev_addr)) {
++    DECLARE_MAC_BUF(mac_buf);
++
+ 		random_ether_addr(dev->dev_addr);
+-		printk(KERN_INFO "%s: generated random MAC address "
+-			"%.2x:%.2x:%.2x:%.2x:%.2x:%.2x.\n", dev->name,
+-			dev->dev_addr[0], dev->dev_addr[1],
+-			dev->dev_addr[2], dev->dev_addr[3],
+-			dev->dev_addr[4], dev->dev_addr[5]);
++    dev_info(&dev->dev, "generated random MAC address %s\n",
++      print_mac(mac_buf, dev->dev_addr));
+ 	}
+ 
+ 	napi_enable(&ep->napi);
+@@ -664,6 +687,8 @@ static int ep93xx_open(struct net_device *dev)
+ 
+ 	wrl(ep, REG_GIINTMSK, REG_GIINTMSK_ENABLE);
+ 
++  phy_start(ep->phy_dev);
++
+ 	netif_start_queue(dev);
+ 
+ 	return 0;
+@@ -676,6 +701,9 @@ static int ep93xx_close(struct net_device *dev)
+ 	napi_disable(&ep->napi);
+ 	netif_stop_queue(dev);
+ 
++  if (ep->phy_dev)
++    phy_stop(ep->phy_dev);
++
+ 	wrl(ep, REG_GIINTMSK, 0);
+ 	free_irq(ep->irq, dev);
+ 	ep93xx_stop_hw(dev);
+@@ -687,51 +715,83 @@ static int ep93xx_close(struct net_device *dev)
+ static int ep93xx_ioctl(struct net_device *dev, struct ifreq *ifr, int cmd)
+ {
+ 	struct ep93xx_priv *ep = netdev_priv(dev);
+-	struct mii_ioctl_data *data = if_mii(ifr);
+ 
+-	return generic_mii_ioctl(&ep->mii, data, cmd, NULL);
++  return phy_mii_ioctl(ep->phy_dev, if_mii(ifr), cmd);
+ }
+ 
+-static int ep93xx_mdio_read(struct net_device *dev, int phy_id, int reg)
++/* common MII transactions should take < 100 iterations */
++#define EP93XX_PHY_TIMEOUT 2000
++
++static int ep93xx_mdio_wait(struct mii_bus *bus)
+ {
+-	struct ep93xx_priv *ep = netdev_priv(dev);
+-	int data;
+-	int i;
++  struct ep93xx_priv *ep = bus->priv;
++  unsigned int timeout = EP93XX_PHY_TIMEOUT;
+ 
+-	wrl(ep, REG_MIICMD, REG_MIICMD_READ | (phy_id << 5) | reg);
++  while ((rdl(ep, REG_MIISTS) & REG_MIISTS_BUSY)
++        && timeout--)
++    cpu_relax();
+ 
+-	for (i = 0; i < 10; i++) {
+-		if ((rdl(ep, REG_MIISTS) & REG_MIISTS_BUSY) == 0)
+-			break;
+-		msleep(1);
++  if (timeout <= 0) {
++    dev_err(bus->dev, "MII operation timed out\n");
++    return -ETIMEDOUT;
+ 	}
+ 
+-	if (i == 10) {
+-		printk(KERN_INFO DRV_MODULE_NAME ": mdio read timed out\n");
+-		data = 0xffff;
+-	} else {
+-		data = rdl(ep, REG_MIIDATA);
+-	}
++	return 0;
++}
++
++static int ep93xx_mdio_read(struct mii_bus *bus, int mii_id, int regnum)
++{
++  struct ep93xx_priv *ep = bus->priv;
++  u32 selfctl;
++  u32 data;
++
++  if (ep93xx_mdio_wait(bus) < 0)
++    return -ETIMEDOUT;
+ 
+-	return data;
++  selfctl = rdl(ep, REG_SELFCTL);
++
++  if (ep->phy_supports_mfps)
++    wrl(ep, REG_SELFCTL, selfctl | REG_SELFCTL_PSPRS);
++  else
++    wrl(ep, REG_SELFCTL, selfctl & ~REG_SELFCTL_PSPRS);
++
++  wrl(ep, REG_MIICMD, REG_MIICMD_READ | (mii_id << 5) | regnum);
++
++  if (ep93xx_mdio_wait(bus) < 0)
++    return -ETIMEDOUT;
++
++  data =  rdl(ep, REG_MIIDATA);
++
++  wrl(ep, REG_SELFCTL, selfctl);
++
++  return data;
+ }
+ 
+-static void ep93xx_mdio_write(struct net_device *dev, int phy_id, int reg, int data)
++static int ep93xx_mdio_write(struct mii_bus *bus, int mii_id, int regnum,
++          u16 value)
+ {
+-	struct ep93xx_priv *ep = netdev_priv(dev);
+-	int i;
++  struct ep93xx_priv *ep = bus->priv;
++  u32 selfctl;
+ 
+-	wrl(ep, REG_MIIDATA, data);
+-	wrl(ep, REG_MIICMD, REG_MIICMD_WRITE | (phy_id << 5) | reg);
++  if (ep93xx_mdio_wait(bus) < 0)
++    return -ETIMEDOUT;
+ 
+-	for (i = 0; i < 10; i++) {
+-		if ((rdl(ep, REG_MIISTS) & REG_MIISTS_BUSY) == 0)
+-			break;
+-		msleep(1);
+-	}
++  selfctl = rdl(ep, REG_SELFCTL);
+ 
+-	if (i == 10)
+-		printk(KERN_INFO DRV_MODULE_NAME ": mdio write timed out\n");
++  if (ep->phy_supports_mfps)
++    wrl(ep, REG_SELFCTL, selfctl | REG_SELFCTL_PSPRS);
++  else
++    wrl(ep, REG_SELFCTL, selfctl & ~REG_SELFCTL_PSPRS);
++
++  wrl(ep, REG_MIIDATA, value);
++  wrl(ep, REG_MIICMD, REG_MIICMD_WRITE | (mii_id << 5) | regnum);
++
++  if (ep93xx_mdio_wait(bus) < 0)
++    return -ETIMEDOUT;
++
++  wrl(ep, REG_SELFCTL, selfctl);
++
++  return 0;
+ }
+ 
+ static void ep93xx_get_drvinfo(struct net_device *dev, struct ethtool_drvinfo *info)
+@@ -743,33 +803,31 @@ static void ep93xx_get_drvinfo(struct net_device *dev, struct ethtool_drvinfo *i
+ static int ep93xx_get_settings(struct net_device *dev, struct ethtool_cmd *cmd)
+ {
+ 	struct ep93xx_priv *ep = netdev_priv(dev);
+-	return mii_ethtool_gset(&ep->mii, cmd);
++  struct phy_device *phydev = ep->phy_dev;
++
++  if (!phydev)
++    return -ENODEV;
++
++  return phy_ethtool_gset(phydev, cmd);
+ }
+ 
+ static int ep93xx_set_settings(struct net_device *dev, struct ethtool_cmd *cmd)
+ {
+ 	struct ep93xx_priv *ep = netdev_priv(dev);
+-	return mii_ethtool_sset(&ep->mii, cmd);
+-}
++  struct phy_device *phydev = ep->phy_dev;
+ 
+-static int ep93xx_nway_reset(struct net_device *dev)
+-{
+-	struct ep93xx_priv *ep = netdev_priv(dev);
+-	return mii_nway_restart(&ep->mii);
+-}
++  if (!phydev)
++    return -ENODEV;
+ 
+-static u32 ep93xx_get_link(struct net_device *dev)
+-{
+-	struct ep93xx_priv *ep = netdev_priv(dev);
+-	return mii_link_ok(&ep->mii);
++  return phy_ethtool_sset(phydev, cmd);
+ }
+ 
++
+ static struct ethtool_ops ep93xx_ethtool_ops = {
+ 	.get_drvinfo		= ep93xx_get_drvinfo,
+ 	.get_settings		= ep93xx_get_settings,
+ 	.set_settings		= ep93xx_set_settings,
+-	.nway_reset		= ep93xx_nway_reset,
+-	.get_link		= ep93xx_get_link,
++  .get_link   = ethtool_op_get_link,
+ };
+ 
+ struct net_device *ep93xx_dev_alloc(struct ep93xx_eth_data *data)
+@@ -824,12 +882,122 @@ static int ep93xx_eth_remove(struct platform_device *pdev)
+ 	return 0;
+ }
+ 
++static void ep93xx_adjust_link(struct net_device *dev)
++{
++  struct ep93xx_priv *ep = netdev_priv(dev);
++  struct phy_device *phydev = ep->phy_dev;
++
++  int status_change = 0;
++
++  if (phydev->link) {
++    if ((ep->speed != phydev->speed) ||
++        (ep->duplex != phydev->duplex)) {
++      /* speed and/or duplex state changed */
++      u32 testctl = rdl(ep, REG_TESTCTL);
++
++      if (DUPLEX_FULL == phydev->duplex)
++        testctl |= REG_TESTCTL_MFDX;
++      else
++        testctl &= ~(REG_TESTCTL_MFDX);
++
++      wrl(ep, REG_TESTCTL, testctl);
++
++      ep->speed = phydev->speed;
++      ep->duplex = phydev->duplex;
++      status_change = 1;
++    }
++  }
++
++  /* test for online/offline link transition */
++  if (phydev->link != ep->link) {
++    if (phydev->link) /* link went online */
++      netif_tx_schedule_all(dev);
++    else { /* link went offline */
++      ep->speed = 0;
++      ep->duplex = -1;
++    }
++    ep->link = phydev->link;
++
++    status_change = 1;
++  }
++
++  if (status_change)
++    phy_print_status(phydev);
++}
++
++static int ep93xx_mii_probe(struct net_device *dev, int phy_addr)
++{
++  struct ep93xx_priv *ep = netdev_priv(dev);
++  struct phy_device *phydev = NULL;
++  int val;
++
++  if (phy_addr >= 0 && phy_addr < PHY_MAX_ADDR)
++    phydev = ep->mii_bus.phy_map[phy_addr];
++
++  if (!phydev) {
++    dev_info(&dev->dev,
++       "PHY not found at specified address,"
++       " trying autodetection\n");
++
++    /* find the first phy */
++    for (phy_addr = 0; phy_addr < PHY_MAX_ADDR; phy_addr++) {
++      if (ep->mii_bus.phy_map[phy_addr]) {
++        phydev = ep->mii_bus.phy_map[phy_addr];
++        break;
++      }
++    }
++  }
++
++  if (!phydev) {
++    dev_err(&dev->dev, "no PHY found\n");
++    return -ENODEV;
++  }
++
++  phydev = phy_connect(dev, phydev->dev.bus_id,
++           ep93xx_adjust_link, 0, PHY_INTERFACE_MODE_MII);
++
++  if (IS_ERR(phydev)) {
++    dev_err(&dev->dev, "Could not attach to PHY\n");
++    return PTR_ERR(phydev);
++  }
++
++  ep->phy_supports_mfps = 0;
++
++  val = phy_read(phydev, MII_BMSR);
++  if (val < 0) {
++    dev_err(&phydev->dev, "failed to read MII register\n");
++    return val;
++  }
++
++  if (val & 0x0040) {
++    dev_info(&phydev->dev,
++       "PHY supports MII frame preamble suppression\n");
++    ep->phy_supports_mfps = 1;
++  }
++
++  phydev->supported &= PHY_BASIC_FEATURES;
++
++  phydev->advertising = phydev->supported;
++
++  ep->link = 0;
++  ep->speed = 0;
++  ep->duplex = -1;
++  ep->phy_dev = phydev;
++
++  dev_info(&dev->dev, "attached PHY driver [%s] "
++     "(mii_bus:phy_addr=%s, irq=%d)\n",
++     phydev->drv->name, phydev->dev.bus_id, phydev->irq);
++
++  return 0;
++}
++
+ static int ep93xx_eth_probe(struct platform_device *pdev)
+ {
+ 	struct ep93xx_eth_data *data;
+ 	struct net_device *dev;
+ 	struct ep93xx_priv *ep;
+-	int err;
++  DECLARE_MAC_BUF(mac_buf);
++  int err, i;
+ 
+ 	if (pdev == NULL)
+ 		return -ENODEV;
+@@ -852,7 +1020,7 @@ static int ep93xx_eth_probe(struct platform_device *pdev)
+ 	if (ep->res == NULL) {
+ 		dev_err(&pdev->dev, "Could not reserve memory region\n");
+ 		err = -ENOMEM;
+-		goto err_out;
++    goto err_out_request_mem_region;
+ 	}
+ 
+ 	ep->base_addr = ioremap(pdev->resource[0].start,
+@@ -860,34 +1028,74 @@ static int ep93xx_eth_probe(struct platform_device *pdev)
+ 	if (ep->base_addr == NULL) {
+ 		dev_err(&pdev->dev, "Failed to ioremap ethernet registers\n");
+ 		err = -EIO;
+-		goto err_out;
++    goto err_out_ioremap;
+ 	}
+ 	ep->irq = pdev->resource[1].start;
+ 
+-	ep->mii.phy_id = data->phy_id;
+-	ep->mii.phy_id_mask = 0x1f;
+-	ep->mii.reg_num_mask = 0x1f;
+-	ep->mii.dev = dev;
+-	ep->mii.mdio_read = ep93xx_mdio_read;
+-	ep->mii.mdio_write = ep93xx_mdio_write;
++  /* mdio/mii bus */
++  ep->mii_bus.name = "ep93xx_mii_bus";
++  snprintf(ep->mii_bus.id, MII_BUS_ID_SIZE, "0");
++
++  ep->mii_bus.read = ep93xx_mdio_read;
++  ep->mii_bus.write = ep93xx_mdio_write;
++  ep->mii_bus.reset = ep93xx_mdio_reset;
++
++  ep->mii_bus.phy_mask = 0;
++
++  ep->mii_bus.priv = ep;
++  ep->mii_bus.dev = &dev->dev;
++
++  ep->mii_bus.irq = kmalloc(sizeof(int)*PHY_MAX_ADDR, GFP_KERNEL);
++  if (NULL == ep->mii_bus.irq) {
++    dev_err(&pdev->dev, "Could not allocate memory\n");
++    err = -ENOMEM;
++    goto err_out_mii_bus_irq_kmalloc;
++  }
++
++  for (i = 0; i < PHY_MAX_ADDR; i++)
++    ep->mii_bus.irq[i] = PHY_POLL;
++
+ 	ep->mdc_divisor = 40;	/* Max HCLK 100 MHz, min MDIO clk 2.5 MHz.  */
++  ep->phy_supports_mfps = 0; /* probe without preamble suppression */
+ 
+ 	err = register_netdev(dev);
+ 	if (err) {
+ 		dev_err(&pdev->dev, "Failed to register netdev\n");
+-		goto err_out;
++    goto err_out_register_netdev;
+ 	}
+ 
+-	printk(KERN_INFO "%s: ep93xx on-chip ethernet, IRQ %d, "
+-			 "%.2x:%.2x:%.2x:%.2x:%.2x:%.2x.\n", dev->name,
+-			ep->irq, data->dev_addr[0], data->dev_addr[1],
+-			data->dev_addr[2], data->dev_addr[3],
+-			data->dev_addr[4], data->dev_addr[5]);
++  err = mdiobus_register(&ep->mii_bus);
++  if (err) {
++    dev_err(&dev->dev, "Could not register MII bus\n");
++    goto err_out_mdiobus_register;
++  }
++
++  err = ep93xx_mii_probe(dev, data->phy_id);
++  if (err) {
++    dev_err(&dev->dev, "failed to probe MII bus\n");
++    goto err_out_mii_probe;
++  }
++
++  dev_info(&dev->dev, "ep93xx on-chip ethernet, IRQ %d, %s\n",
++     ep->irq, print_mac(mac_buf, dev->dev_addr));
+ 
+ 	return 0;
+ 
++err_out_mii_probe:
++  mdiobus_unregister(&ep->mii_bus);
++err_out_mdiobus_register:
++  unregister_netdev(dev);
++err_out_register_netdev:
++  kfree(ep->mii_bus.irq);
++err_out_mii_bus_irq_kmalloc:
++  iounmap(ep->base_addr);
++err_out_ioremap:
++  release_resource(ep->res);
++  kfree(ep->res);
++err_out_request_mem_region:
++  free_netdev(dev);
+ err_out:
+-	ep93xx_eth_remove(pdev);
++
+ 	return err;
+ }
+ 
+diff --git a/drivers/net/ax88796.c b/drivers/net/ax88796.c
+index a886a4b..f96d9eb 100644
+--- a/drivers/net/ax88796.c
++++ b/drivers/net/ax88796.c
+@@ -911,7 +911,11 @@ static int ax_probe(struct platform_device *pdev)
+ 			goto exit_mem2;
+ 		}
+ 
++    #ifdef CONFIG_AX88796_TS_ETH100
++    ei_status.reg_offset[0x10] = ax->map2 - ei_status.mem + 0x10;
++    #else
+ 		ei_status.reg_offset[0x1f] = ax->map2 - ei_status.mem;
++    #endif
+ 	}
+ 
+ 	/* got resources, now initialise and register device */
+diff --git a/drivers/net/ax88796_ts_eth100.c b/drivers/net/ax88796_ts_eth100.c
+new file mode 100644
+index 0000000..19746c3
+--- /dev/null
++++ b/drivers/net/ax88796_ts_eth100.c
+@@ -0,0 +1,184 @@
++/*
++ *  linux/drivers/net/ax88796_ts_eth100.c
++ *  Technologic Systems TS-ETH100 support.
++ *
++ * (c) Copyright 2008  Matthieu Crapet <mcrapet@gmail.com>
++ *
++ * This program is free software; you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License as published by
++ * the Free Software Foundation; either version 2 of the License, or
++ * (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ */
++
++#include <linux/module.h>
++#include <linux/init.h>
++#include <linux/platform_device.h>
++#include <linux/irq.h>
++#include <net/ax88796.h>
++#include <mach/hardware.h>
++#include <mach/gpio.h>
++
++#define TS72XX_ETH100_IO8_PHYS_BASE  (TS72XX_PC104_8BIT_IO_PHYS_BASE)
++#define TS72XX_ETH100_IO8_SIZE       (TS72XX_PC104_8BIT_IO_SIZE)
++#define TS72XX_ETH100_IO16_PHYS_BASE (TS72XX_PC104_16BIT_IO_PHYS_BASE)
++#define TS72XX_ETH100_IO16_SIZE      (TS72XX_PC104_16BIT_IO_SIZE)
++
++/* Technologic systems I/O space */
++#define TS_ETH100_PLD_0 0x100
++#define TS_ETH100_PLD_1 0x110
++#define TS_ETH100_PLD_2 0x120
++#define TS_ETH100_PLD_3 0x130
++
++/* NE2000 I/O space */
++#define TS_ETH100_MAC_0 0x200
++#define TS_ETH100_MAC_1 0x240
++#define TS_ETH100_MAC_2 0x300
++#define TS_ETH100_MAC_3 0x340
++
++/* Board identifier must be 5 ; PLD revision should be 1 */
++#define is_eth100_present(__iomem, __offset) \
++  (((__raw_readb(__iomem + __offset) & 0xF) == 0x5) && \
++   ((__raw_readb(__iomem + __offset + 4) & 0xF) == 0x1))
++
++/* Jumpers status (SRAM control register) */
++#define read_irq(__iomem, __offset) \
++  (__raw_readb(__iomem + __offset + 8) & 0xE)
++
++
++static u32 offsets[0x20] = {
++  0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07,
++  0x08, 0x09, 0x0A, 0x0B, 0x0C, 0x0D, 0x0E, 0x0F,
++  0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17,
++  0x18, 0x19, 0x1A, 0x1B, 0x1C, 0x1D, 0x1E, 0x1F
++};
++
++static struct ax_plat_data ts72xx_eth100_asix_data = {
++  .flags = AXFLG_HAS_93CX6,
++  .wordlength = 2,
++  .dcr_val  = 0x48,
++  .rcr_val  = 0x40,
++  .reg_offsets = offsets,
++};
++
++static struct resource ts72xx_eth100_resource[] = {
++  [0] = {
++    .start = TS72XX_ETH100_IO8_PHYS_BASE,
++    .end   = TS72XX_ETH100_IO8_PHYS_BASE + 0x3ff, //0x20 -1,
++    .flags = IORESOURCE_MEM
++  },
++  [1] = { /* 0x10 is NE_DATAPORT is 16-bit access */
++    .start = TS72XX_ETH100_IO16_PHYS_BASE,
++    .end   = TS72XX_ETH100_IO16_PHYS_BASE + 0x3ff, //0x20 -1,
++    .flags = IORESOURCE_MEM
++  },
++  [2] = {
++    .start = IRQ_EP93XX_EXT1,
++    .end   = IRQ_EP93XX_EXT1,
++    .flags = IORESOURCE_IRQ
++  }
++};
++
++
++static void ts72xx_eth100_release(struct device *dev)
++{
++  // nothing to do (no kfree) because we have static struct
++}
++
++
++static struct platform_device ts72xx_eth100_device_asix = {
++  .name   = "ax88796",
++  .id   = 0,
++  .num_resources  = ARRAY_SIZE(ts72xx_eth100_resource),
++  .resource = ts72xx_eth100_resource,
++  .dev    = {
++    .platform_data = &ts72xx_eth100_asix_data,
++    .release = ts72xx_eth100_release,
++  }
++};
++
++
++static int __init ts_eth100_init(void)
++{
++  void __iomem *iomem;
++  static struct platform_device *ethX = NULL;
++
++  iomem = ioremap(TS72XX_ETH100_IO8_PHYS_BASE, TS72XX_ETH100_IO8_SIZE);
++  if (iomem != NULL) {
++    int irq = 0;
++
++    ethX = &ts72xx_eth100_device_asix;
++
++    if (is_eth100_present(iomem, TS_ETH100_PLD_0)) {
++      ethX->resource[0].start += TS_ETH100_MAC_0;
++      ethX->resource[0].end   += TS_ETH100_MAC_0;
++      ethX->resource[1].start += TS_ETH100_MAC_0;
++      ethX->resource[1].end   += TS_ETH100_MAC_0;
++      irq = read_irq(iomem, TS_ETH100_PLD_0);
++    } else if(is_eth100_present(iomem, TS_ETH100_PLD_1)) {
++      ethX->resource[0].start += TS_ETH100_MAC_1;
++      ethX->resource[0].end   += TS_ETH100_MAC_1;
++      ethX->resource[1].start += TS_ETH100_MAC_1;
++      ethX->resource[1].end   += TS_ETH100_MAC_1;
++      irq = read_irq(iomem, TS_ETH100_PLD_1);
++    } else if(is_eth100_present(iomem, TS_ETH100_PLD_2)) {
++      ethX->resource[0].start += TS_ETH100_MAC_2;
++      ethX->resource[0].end   += TS_ETH100_MAC_2;
++      ethX->resource[1].start += TS_ETH100_MAC_2;
++      ethX->resource[1].end   += TS_ETH100_MAC_2;
++      irq = read_irq(iomem, TS_ETH100_PLD_2);
++    } else if(is_eth100_present(iomem, TS_ETH100_PLD_3)) {
++      ethX->resource[0].start += TS_ETH100_MAC_3;
++      ethX->resource[0].end   += TS_ETH100_MAC_3;
++      ethX->resource[1].start += TS_ETH100_MAC_3;
++      ethX->resource[1].end   += TS_ETH100_MAC_3;
++      irq = read_irq(iomem, TS_ETH100_PLD_3);
++    } else {
++      ethX = NULL;
++    }
++
++    /* Translate IRQ number */
++    if (ethX != NULL) {
++      switch (irq) {
++        case 0x2: /* IRQ5 */
++          ethX->resource[2].start = gpio_to_irq(EP93XX_GPIO_LINE_F(3)); // 83
++          ethX->resource[2].end   = gpio_to_irq(EP93XX_GPIO_LINE_F(3));
++          gpio_direction_input(EP93XX_GPIO_LINE_F(3));
++          set_irq_type(ethX->resource[2].start, IRQ_TYPE_EDGE_RISING);
++          break;
++        case 0x4: /* IRQ6 */
++          ethX->resource[2].start = IRQ_EP93XX_EXT1;
++          ethX->resource[2].end   = IRQ_EP93XX_EXT1;
++          break;
++        case 0x8: /* IRQ7 */
++        default:
++          ethX->resource[2].start = IRQ_EP93XX_EXT3;
++          ethX->resource[2].end   = IRQ_EP93XX_EXT3;
++          break;
++      }
++    }
++
++    iounmap(iomem);
++  }
++
++  return ((ethX == NULL) ? -ENODEV :
++      platform_device_register(&ts72xx_eth100_device_asix));
++}
++
++
++static void __exit ts_eth100_exit(void)
++{
++  platform_device_unregister(&ts72xx_eth100_device_asix);
++}
++
++module_init(ts_eth100_init);
++module_exit(ts_eth100_exit);
++
++MODULE_AUTHOR("Matthieu Crapet <mcrapet@gmail.com>");
++MODULE_DESCRIPTION("Asix 88796 ethernet probe module for TS-ETH100 (TS-72xx)");
++MODULE_LICENSE("GPL");
++MODULE_VERSION("0.2");
+diff --git a/drivers/serial/8250_ts_ser1.c b/drivers/serial/8250_ts_ser1.c
+new file mode 100644
+index 0000000..054a8e2
+--- /dev/null
++++ b/drivers/serial/8250_ts_ser1.c
+@@ -0,0 +1,148 @@
++/*
++ *  linux/drivers/serial/8250_ts_ser1.c
++ *  Technologic Systems TS-SER1 support.
++ *
++ * (c) Copyright 2006-2008  Matthieu Crapet <mcrapet@gmail.com>
++ * Data taken from include/asm-i386/serial.h
++ *
++ * This program is free software; you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License as published by
++ * the Free Software Foundation; either version 2 of the License, or
++ * (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * Pin Number:
++ * 1 DCD
++ * 2 Receive data
++ * 3 Trasmit data
++ * 4 DTR
++ * 5 Signal Ground
++ * 6 DSR
++ * 7 RTS
++ * 8 CTS
++ * 9 RI
++ */
++
++#include <linux/module.h>
++#include <linux/init.h>
++#include <linux/serial_8250.h>
++#include <linux/irq.h>
++#include <mach/hardware.h>
++#include <mach/gpio.h>
++
++
++#define TS72XX_SER1_IO_PHYS_BASE  (TS72XX_PC104_8BIT_IO_PHYS_BASE)
++#define TS72XX_SER1_IO_SIZE       (TS72XX_PC104_8BIT_IO_SIZE)
++
++#define TS_SER1_PORT_COM3 0x3E8
++#define TS_SER1_PORT_COM4 0x2E8
++#define TS_SER1_PORT_COM5 0x3A8
++
++/* Value to write in 16550A scratch register */
++#define MARKER_BYTE 0xAA /* or 0x55 */
++
++#define PORT(_base,_irq)           \
++  {                                \
++    .iobase   = _base,             \
++    .membase  = (void __iomem *)0, \
++    .irq      = _irq,              \
++    .uartclk  = 1843200,           \
++    .iotype   = UPIO_PORT,         \
++    .flags    = UPF_BOOT_AUTOCONF, \
++  }
++// Note: IRQ can be shared (see CONFIG_SERIAL_8250_SHARE_IRQ)
++
++
++static struct plat_serial8250_port ts72xx_ser1_data_com3[] = {
++  PORT(TS_SER1_PORT_COM3, 0),
++  { },
++};
++
++static struct plat_serial8250_port ts72xx_ser1_data_com4[] = {
++  PORT(TS_SER1_PORT_COM4, 0),
++  { },
++};
++
++static struct plat_serial8250_port ts72xx_ser1_data_com5[] = {
++  PORT(TS_SER1_PORT_COM5, 0),
++  { },
++};
++
++static struct platform_device ts72xx_ser1_device = {
++  .name     = "serial8250",
++  .id       =  0,
++  .dev      = {
++    .platform_data  = ts72xx_ser1_data_com3,
++  },
++};
++
++static void __iomem *iomem;
++
++
++static int __init ts_ser1_init(void)
++{
++  static struct plat_serial8250_port *comX = NULL;
++  int n = 0; // COM number as printed on TS-SER1 pcb
++
++  iomem = ioremap(TS72XX_SER1_IO_PHYS_BASE, TS72XX_SER1_IO_SIZE);
++
++  if (iomem != NULL) {
++    __raw_writeb(MARKER_BYTE, iomem + TS_SER1_PORT_COM3 + 7);
++    if (__raw_readb(iomem + TS_SER1_PORT_COM3 + 7) == MARKER_BYTE) {
++      comX = ts72xx_ser1_data_com3;
++      n = 3;
++    } else {
++      __raw_writeb(MARKER_BYTE, iomem + TS_SER1_PORT_COM4 + 7);
++      if (__raw_readb(iomem + TS_SER1_PORT_COM4 + 7) == MARKER_BYTE) {
++        comX = ts72xx_ser1_data_com4;
++        n = 4;
++      } else {
++        __raw_writeb(MARKER_BYTE, iomem + TS_SER1_PORT_COM5 + 7);
++        if (__raw_readb(iomem + TS_SER1_PORT_COM5 + 7) == MARKER_BYTE) {
++          comX = ts72xx_ser1_data_com5;
++          n = 5;
++        }
++      }
++    }
++
++    if (comX) {
++      #if CONFIG_SERIAL_8250_TS_SER1_IRQ == 5
++      gpio_direction_input(EP93XX_GPIO_LINE_F(3));
++      comX->irq = gpio_to_irq(EP93XX_GPIO_LINE_F(3)); // 83
++      set_irq_type(comX->irq, IRQ_TYPE_EDGE_RISING);
++      #elif CONFIG_SERIAL_8250_TS_SER1_IRQ == 6
++      comX->irq = IRQ_EP93XX_EXT1;
++      #elif CONFIG_SERIAL_8250_TS_SER1_IRQ == 7
++      comX->irq = IRQ_EP93XX_EXT3;
++      #else
++      comX->irq = IRQ_EP93XX_EXT3;
++      #endif
++
++      comX->iobase += (unsigned long)iomem; // virtual address
++    }
++
++    ts72xx_ser1_device.id = n;
++    ts72xx_ser1_device.dev.platform_data = comX;
++  }
++
++  return ((comX == NULL) ? -ENODEV :
++      platform_device_register(&ts72xx_ser1_device));
++}
++
++static void __exit ts_ser1_exit(void)
++{
++  iounmap(iomem);
++  platform_device_unregister(&ts72xx_ser1_device);
++}
++
++module_init(ts_ser1_init);
++module_exit(ts_ser1_exit);
++
++MODULE_AUTHOR("Matthieu Crapet <mcrapet@gmail.com>");
++MODULE_DESCRIPTION("8250 serial probe module for TS-SER1 (TS-72xx)");
++MODULE_LICENSE("GPL");
++MODULE_VERSION("0.3");
+diff --git a/drivers/serial/Kconfig b/drivers/serial/Kconfig
+index 77cb342..945daff 100644
+--- a/drivers/serial/Kconfig
++++ b/drivers/serial/Kconfig
+@@ -276,6 +276,23 @@ config SERIAL_8250_RM9K
+ 	  port hardware found on MIPS RM9122 and similar processors.
+ 	  If unsure, say N.
+ 
++config SERIAL_8250_TS_SER1
++	tristate "Support TS-SER1 (for TS-72XX SBC)"
++	depends on SERIAL_8250 != n && MACH_TS72XX
++	help
++	  Say Y here if you have a TS-SER1 PC/104 peripheral.
++	  COM number will be configured automaticaly.
++
++	  To compile this driver as a module, choose M here: the module
++	  will be called 8250_ts_ser1.
++
++config SERIAL_8250_TS_SER1_IRQ
++	int "Selected IRQ (5, 6 or 7)"
++	depends on SERIAL_8250_TS_SER1
++	default "5"
++	help
++	  Enter jumper IRQ configuration
++
+ comment "Non-8250 serial port support"
+ 
+ config SERIAL_AMBA_PL010
+diff --git a/drivers/serial/Makefile b/drivers/serial/Makefile
+index 7e7383e..b4bd691 100644
+--- a/drivers/serial/Makefile
++++ b/drivers/serial/Makefile
+@@ -18,6 +18,7 @@ obj-$(CONFIG_SERIAL_8250_BOCA) += 8250_boca.o
+ obj-$(CONFIG_SERIAL_8250_EXAR_ST16C554) += 8250_exar_st16c554.o
+ obj-$(CONFIG_SERIAL_8250_HUB6) += 8250_hub6.o
+ obj-$(CONFIG_SERIAL_8250_MCA) += 8250_mca.o
++obj-$(CONFIG_SERIAL_8250_TS_SER1) += 8250_ts_ser1.o
+ obj-$(CONFIG_SERIAL_AMBA_PL010) += amba-pl010.o
+ obj-$(CONFIG_SERIAL_AMBA_PL011) += amba-pl011.o
+ obj-$(CONFIG_SERIAL_CLPS711X) += clps711x.o
+diff --git a/drivers/spi/Kconfig b/drivers/spi/Kconfig
+index b9d0efb..51b55b5 100644
+--- a/drivers/spi/Kconfig
++++ b/drivers/spi/Kconfig
+@@ -204,6 +204,12 @@ config SPI_XILINX
+ 	  See the "OPB Serial Peripheral Interface (SPI) (v1.00e)"
+ 	  Product Specification document (DS464) for hardware details.
+ 
++config SPI_EP93XX
++	tristate "EP93XX SPI controller"
++	depends on SPI_MASTER
++	help
++	  Simple SPI driver for EP93xx.
++
+ #
+ # Add new SPI master controllers in alphabetical order above this line
+ #
+@@ -243,6 +249,13 @@ config SPI_TLE62X0
+ 	  sysfs interface, with each line presented as a kind of GPIO
+ 	  exposing both switch control and diagnostic feedback.
+ 
++config SPI_TMP124
++	tristate "Texas Instruments TMP1224, TMP124"
++	depends on SPI_MASTER && SYSFS
++	help
++	  SPI driver for TMP12X temperature sensor chips.
++	  This provides a sysfs entry for temperature reading (2°C accurate).
++
+ #
+ # Add new SPI protocol masters in alphabetical order above this line
+ #
+diff --git a/drivers/spi/Makefile b/drivers/spi/Makefile
+index ccf18de..1effdf3 100644
+--- a/drivers/spi/Makefile
++++ b/drivers/spi/Makefile
+@@ -28,6 +28,7 @@ obj-$(CONFIG_SPI_S3C24XX_GPIO)		+= spi_s3c24xx_gpio.o
+ obj-$(CONFIG_SPI_S3C24XX)		+= spi_s3c24xx.o
+ obj-$(CONFIG_SPI_TXX9)			+= spi_txx9.o
+ obj-$(CONFIG_SPI_XILINX)		+= xilinx_spi.o
++obj-$(CONFIG_SPI_EP93XX)		+= spi_ep93xx.o
+ obj-$(CONFIG_SPI_SH_SCI)		+= spi_sh_sci.o
+ # 	... add above this line ...
+ 
+@@ -35,6 +36,7 @@ obj-$(CONFIG_SPI_SH_SCI)		+= spi_sh_sci.o
+ obj-$(CONFIG_SPI_AT25)		+= at25.o
+ obj-$(CONFIG_SPI_SPIDEV)	+= spidev.o
+ obj-$(CONFIG_SPI_TLE62X0)	+= tle62x0.o
++obj-$(CONFIG_SPI_TMP124)	+= tmp124.o
+ # 	... add above this line ...
+ 
+ # SPI slave controller drivers (upstream link)
+diff --git a/drivers/spi/spi_ep93xx.c b/drivers/spi/spi_ep93xx.c
+new file mode 100644
+index 0000000..005da4e
+--- /dev/null
++++ b/drivers/spi/spi_ep93xx.c
+@@ -0,0 +1,496 @@
++/*
++ *  EP93xx SPI driver
++ *
++ * (c) Copyright 2008  Matthieu Crapet <mcrapet@gmail.com>
++ * Based on pxa2xx_spi.c by Stephen Street / StreetFire Sound Labs
++ *
++ * This program is free software; you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License as published by
++ * the Free Software Foundation; either version 2 of the License, or
++ * (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * Notes:
++ *  - Uses SSP IP of processor
++ *  - Restricted to SPI master mode
++ *  - No DMA transfer
++ *  - No power management support
++ */
++
++#include <linux/init.h>
++#include <linux/module.h>
++#include <linux/device.h>
++#include <linux/interrupt.h>
++#include <linux/delay.h>
++#include <linux/platform_device.h>
++#include <linux/spi/spi.h>
++#include <linux/clk.h>
++#include <asm/irq.h>
++#include <mach/hardware.h>
++#include <mach/spi.h>
++
++#include <linux/sched.h>
++#include <linux/spinlock.h>
++#include <linux/workqueue.h>
++
++#include "spi_ep93xx.h"
++
++
++struct ep93xx_spi {
++  struct spi_master *master;    /* SPI framework hookup */
++  void __iomem *ioaddr;         /* Virtual base address to SSP registers */
++  u32 freq_max;
++  u32 freq_min;
++  struct clk *clk;
++
++  struct workqueue_struct *workqueue;
++  struct work_struct work;
++  spinlock_t lock;
++  struct list_head queue;
++
++  struct ep93xx_spi_chip *cs_chip; /* Chip Select function */
++};
++
++static inline u16 read_reg(void *base, off_t offset)
++{
++	return __raw_readw(base + offset);
++}
++
++static inline void write_reg(u16 v, void *base, off_t offset)
++{
++	__raw_writew(v, base + offset);
++}
++
++/*
++ *  compute SCR and CPSDVR bits to setup spi clock based on main input clock rate
++ *  that was specified in platform data structure
++ *  according to datasheet:
++ *    tempclk = sspclk / cpsdvr
++ *    spiclk = tempclk / (scr + 1)
++ *    SCR valid range is 0..255
++ *    CPSDVR valid range is 2..254
++ */
++static int spi_speed_set(struct ep93xx_spi *drv_data, unsigned speed_hz)
++{
++	unsigned long mainclk_hz = clk_get_rate(drv_data->clk);
++	u32 cpsdvr, scr;
++	u16 ssp_cr0;
++
++	for (cpsdvr = 2; cpsdvr <= 254; cpsdvr+=2) {
++		scr = DIV_ROUND_UP(mainclk_hz / speed_hz, cpsdvr);
++		/* now we have SCR+1 in scr, so count with that */
++		if (scr == 0) { 	/* speed_hz too big */
++			return -EINVAL;
++		}
++		if (scr <= (255 + 1))
++			break;		/* we have valid scr and cpsdvr */
++	}
++	if (cpsdvr > 254) {
++		/* speed_hz is too small, set to minimum speed */
++		scr = 256;
++		cpsdvr = 254;
++	}
++	scr--;
++	write_reg(cpsdvr, drv_data->ioaddr, SSPCPSR);
++	ssp_cr0 = read_reg(drv_data->ioaddr, SSPCR0);
++	ssp_cr0 &= ~(SSP_CONTROL_SCR(0xff));
++	write_reg((ssp_cr0 | SSP_CONTROL_SCR(scr)), drv_data->ioaddr, SSPCR0);
++
++	return 0;
++}
++
++static irqreturn_t ssp_int(int irq, void *dev_id)
++{
++	struct ep93xx_spi *drv_data = dev_id;
++	write_reg(SSP_SSPIxx_RORIS, drv_data->ioaddr, SSPIxR); /* clear it */
++
++	printk(KERN_WARNING "SSP overrun\n");
++	return IRQ_HANDLED;
++}
++
++static int transfer_one_work(struct ep93xx_spi *drv_data, struct spi_message *msg)
++{
++	struct spi_device *spi = msg->spi;
++	struct spi_transfer *xfer;
++	int i;
++	u8 *p;
++
++	drv_data->cs_chip->cs_control(SPI_CS_ASSERT);
++
++	list_for_each_entry(xfer, &msg->transfers, transfer_list) {
++		if (!(xfer->tx_buf || xfer->rx_buf)) {
++			dev_dbg(&spi->dev, "missing rx or tx buf\n");
++			drv_data->cs_chip->cs_control(SPI_CS_DEASSERT);
++			return -EINVAL;
++		}
++
++		if (xfer->bits_per_word) {
++			u16 v = read_reg(drv_data->ioaddr, SSPCR0);
++			v = v & SSP_CONTROL_DSS_MASK;
++			v = v | ((xfer->bits_per_word - 1) & SSP_CONTROL_DSS_MASK);
++			write_reg(v, drv_data->ioaddr, SSPCR0);
++		}
++
++		if (xfer->speed_hz) {
++			if (spi_speed_set(drv_data,xfer->speed_hz) != 0){
++				dev_err(&spi->dev, "xfer speed hz invalid\n");
++				return -EINVAL;
++			}
++		}
++
++		if (xfer->tx_buf) {
++			p = (u8 *)xfer->tx_buf;
++
++			if ((spi->bits_per_word == 16 && xfer->bits_per_word == 0) ||
++			    (xfer->bits_per_word == 16)) {
++				for (i = 0; i < xfer->len; i+=2)
++					write_reg((p[i] << 8) + p[i+1], drv_data->ioaddr, SSPDR);
++			} else {
++				for (i = 0; i < xfer->len; i++)
++					write_reg(p[i], drv_data->ioaddr, SSPDR);
++			}
++		}
++
++		if (xfer->rx_buf) {
++			u16 v;
++			p = xfer->rx_buf;
++
++			if ((spi->bits_per_word == 16 && xfer->bits_per_word == 0) ||
++			    (xfer->bits_per_word == 16)) {
++					for (i = 0; i < xfer->len; i+=2) {
++						  v = read_reg(drv_data->ioaddr, SSPDR);
++						  p[i] = v >> 8;
++						  p[i+1] = v & 0xFF;
++					}
++			} else {
++					for (i = 0; i < xfer->len; i++)
++						  p[i] = read_reg(drv_data->ioaddr, SSPDR);
++			}
++		}
++
++		/* restore device bits_per_word */
++		if (xfer->bits_per_word) {
++			u16 v = read_reg(drv_data->ioaddr, SSPCR0);
++			v = v & SSP_CONTROL_DSS_MASK;
++			v |= spi->bits_per_word - 1;
++			write_reg(v, drv_data->ioaddr, SSPCR0);
++		}
++
++		/* restore device speed_hz */
++		if (xfer->speed_hz) {
++			if (spi_speed_set(drv_data,spi->max_speed_hz) != 0)
++				return -EINVAL;
++		}
++
++		dev_dbg(&spi->dev, "transfer: len=%u, tx_buf=%p, rx_buf=%p\n", xfer->len, xfer->tx_buf, xfer->rx_buf);
++	}
++
++	if (xfer->delay_usecs)
++		udelay(xfer->delay_usecs);
++	drv_data->cs_chip->cs_control(SPI_CS_DEASSERT);
++
++	msg->actual_length = 0;
++	msg->status = 0;
++
++	if (msg->complete)
++		msg->complete(msg->context);
++
++	return 0;
++}
++
++
++static void ssp_work(struct work_struct *work)
++{
++	struct ep93xx_spi *drv_data = container_of(work, struct ep93xx_spi, work);
++	unsigned long flags;
++
++	spin_lock_irqsave(&drv_data->lock, flags);
++	while (!list_empty(&drv_data->queue)) {
++		struct spi_message *m;
++
++		m = container_of(drv_data->queue.next, struct spi_message, queue);
++		list_del_init(&m->queue);
++		spin_unlock_irqrestore(&drv_data->lock, flags);
++
++		transfer_one_work(drv_data, m);
++
++		spin_lock_irqsave(&drv_data->lock, flags);
++	}
++	spin_unlock_irqrestore(&drv_data->lock, flags);
++}
++
++
++static int ssp_transfer(struct spi_device *spi, struct spi_message *m)
++{
++	struct spi_master *master = spi->master;
++	struct ep93xx_spi *drv_data = spi_master_get_devdata(master);
++	struct spi_transfer *t;
++	unsigned long flags;
++
++	m->actual_length = 0;
++
++	/* check each transfer's parameters */
++	list_for_each_entry (t, &m->transfers, transfer_list) {
++		u32 speed_hz = t->speed_hz ? t->speed_hz : spi->max_speed_hz;
++		u8 bits_per_word = t->bits_per_word ? t->bits_per_word : spi->bits_per_word;
++
++		if (!t->tx_buf && !t->rx_buf && t->len)
++			return -EINVAL;
++		if (bits_per_word < 4 || bits_per_word > 16)
++			return -EINVAL;
++		/*if (t->len & ((bits_per_word >> 3) - 1))
++			return -EINVAL;*/
++		if (speed_hz < drv_data->freq_min || speed_hz > drv_data->freq_max)
++			return -EINVAL;
++	}
++
++	spin_lock_irqsave(&drv_data->lock, flags);
++	list_add_tail(&m->queue, &drv_data->queue);
++	queue_work(drv_data->workqueue, &drv_data->work);
++	spin_unlock_irqrestore(&drv_data->lock, flags);
++
++	return 0;
++
++}
++
++/* the spi->mode bits understood by this driver: */
++#define MODEBITS (SPI_CPOL | SPI_CPHA)
++
++static int ssp_setup(struct spi_device *spi)
++{
++	struct ep93xx_spi *drv_data = spi_master_get_devdata(spi->master);
++	struct ep93xx_spi_chip *chip_info;
++	u16 v;
++
++	/* Get controller data */
++	chip_info = spi->controller_data;
++	if (!chip_info) {
++		dev_err(&spi->dev, "setup: controller data required\n");
++		return -EINVAL;
++	}
++	drv_data->cs_chip = chip_info;
++	drv_data->cs_chip->cs_control(SPI_CS_INIT);
++
++	if (!spi->bits_per_word) {
++		spi->bits_per_word = 8;
++	}
++
++	if (spi->bits_per_word < 4 || spi->bits_per_word > 16) {
++		  dev_dbg(&spi->dev, "setup: unsupported %d bit words\n",
++		  spi->bits_per_word);
++		  return -EINVAL;
++	}
++
++	if (spi->chip_select > spi->master->num_chipselect) {
++		  dev_dbg(&spi->dev, "setup: invalid chipselect %u (%u defined)\n",
++		  spi->chip_select,  spi->master->num_chipselect);
++		  return -EINVAL;
++	}
++
++	if (spi->mode & ~MODEBITS) {
++		 dev_dbg(&spi->dev, "setup: unsupported mode bits %x\n",
++		 spi->mode & ~MODEBITS);
++		 return -EINVAL;
++	}
++
++	v = read_reg(drv_data->ioaddr, SSPCR0);
++
++	if (spi->mode & SPI_CPOL)
++		v |= SSP_CONTROL_SPO;
++	else
++		v &= ~SSP_CONTROL_SPO;
++
++	if (spi->mode & SPI_CPHA)
++		v |= SSP_CONTROL_SPH;
++	else
++		v &= ~SSP_CONTROL_SPH;
++
++	v = v & SSP_CONTROL_DSS_MASK;
++	v |= spi->bits_per_word - 1;
++
++	write_reg(v, drv_data->ioaddr, SSPCR0);
++
++	if(!spi->max_speed_hz){
++		spi->max_speed_hz = drv_data->freq_min;
++	}else if(spi->max_speed_hz > drv_data->freq_max ||
++			spi->max_speed_hz < drv_data->freq_min){
++		return -EINVAL;
++	}
++
++	if (spi_speed_set(drv_data,spi->max_speed_hz) != 0){
++		dev_dbg(&spi->dev, "setup: unsupported speed %u\n", spi->max_speed_hz);
++		return -EINVAL;
++	}
++
++	return 0;
++}
++
++
++static void ssp_cleanup(struct spi_device *spi)
++{
++	struct ep93xx_spi *drv_data = spi_master_get_devdata(spi->master);
++	drv_data->cs_chip = NULL;
++}
++
++
++static int __init spi_ep93xx_probe(struct platform_device *pdev)
++{
++	struct device *dev = &pdev->dev;
++	struct spi_master *master;
++	struct ep93xx_spi_data *spi_data = pdev->dev.platform_data;
++	struct ep93xx_spi *drv_data = 0;
++	struct resource *memory_resource;
++	int irq, status = 0, min_div = 2, max_div = 254*(255+1);
++
++
++	/* Check I2SonSSP bit (ssp pins and i2s pins are multiplexed) */
++	if (readl(EP93XX_SYSCON_DEVICE_CONFIG) & 0x80)
++		return -ENODEV;
++
++	/* Allocate master with space for drv_data */
++	master = spi_alloc_master(dev, sizeof(struct ep93xx_spi));
++	if (!master) {
++		dev_err(&pdev->dev, "can not alloc spi_master\n");
++		return -ENOMEM;
++	}
++
++	/* Setup register addresses */
++	memory_resource = platform_get_resource(pdev, IORESOURCE_MEM, 0);
++	if (!memory_resource) {
++		dev_err(&pdev->dev, "memory resources not defined\n");
++		status = -ENODEV;
++		goto out_error_master_alloc;
++	}
++
++	drv_data = spi_master_get_devdata(master);
++	drv_data->master = master;
++	drv_data->ioaddr = (unsigned long *)memory_resource->start;
++	drv_data->clk = clk_get(&pdev->dev, "sspclk");
++	drv_data->freq_max = clk_get_rate(drv_data->clk) / min_div;
++	drv_data->freq_min = clk_get_rate(drv_data->clk) / max_div + 1;
++
++	INIT_WORK(&drv_data->work, ssp_work);
++	spin_lock_init(&drv_data->lock);
++	INIT_LIST_HEAD(&drv_data->queue);
++
++	drv_data->workqueue = create_singlethread_workqueue(master->dev.parent->bus_id);
++	if (!drv_data->workqueue){
++ 		status = -EBUSY;
++		goto out_error_master_alloc;
++	}
++
++	master->bus_num = pdev->id;
++	master->num_chipselect = spi_data->chip_select_num;
++	master->cleanup = ssp_cleanup;
++	master->setup = ssp_setup;
++	master->transfer = ssp_transfer;
++
++	/* Attach to IRQ */
++	irq = platform_get_irq(pdev, 0);
++	if (irq < 0) {
++		dev_err(&pdev->dev, "irq resource not defined\n");
++		status = -ENODEV;
++		goto out_error_master_alloc;
++	}
++
++	status = request_irq(irq, ssp_int, 0, dev->bus_id, drv_data);
++	if (status < 0) {
++		dev_err(&pdev->dev, "can not get IRQ\n");
++		goto out_error_master_alloc;
++	}
++
++	/* Load default SSP configuration */
++	write_reg(SSP_CONTROL_SSE, drv_data->ioaddr, SSPCR1);
++	write_reg(SPI_DEFAULT0, drv_data->ioaddr, SSPCR0);
++	write_reg(SPI_DEFAULT_DIVISOR, drv_data->ioaddr, SSPCPSR);
++	write_reg(0x00, drv_data->ioaddr, SSPCR1);
++
++	/* Register with the SPI framework */
++	platform_set_drvdata(pdev, drv_data);
++	status = spi_register_master(master);
++	if (status != 0) {
++		dev_err(&pdev->dev, "problem registering spi master\n");
++		goto out_error_irq_alloc;
++	}
++
++	write_reg(SPI_DEFAULT1, drv_data->ioaddr, SSPCR1);
++	return status;
++
++out_error_irq_alloc:
++	free_irq(irq, drv_data);
++
++out_error_master_alloc:
++	spi_master_put(master);
++	return status;
++}
++
++static int spi_ep93xx_remove(struct platform_device *pdev)
++{
++	struct ep93xx_spi *drv_data = platform_get_drvdata(pdev);
++	int irq;
++
++	if (!drv_data)
++		return 0;
++
++	/* Disable SSP (clear SSE bit) */
++	write_reg(0x00, drv_data->ioaddr, SSPCR1);
++
++	/* Release IRQ */
++	irq = platform_get_irq(pdev, 0);
++
++	if (irq >= 0)
++		free_irq(irq, drv_data);
++
++	/* Disconnect from the SPI framework */
++	spi_unregister_master(drv_data->master);
++
++	/* Remove the workqueue */
++	destroy_workqueue(drv_data->workqueue);
++
++	/* Prevent double remove */
++	platform_set_drvdata(pdev, NULL);
++
++	spi_master_put(drv_data->master);
++
++	return 0;
++}
++
++static void spi_ep93xx_shutdown(struct platform_device *pdev)
++{
++	int status = 0;
++
++	if ((status = spi_ep93xx_remove(pdev)) != 0)
++		dev_err(&pdev->dev, "shutdown failed with %d\n", status);
++}
++
++static struct platform_driver ep93xx_spi_platform_driver = {
++	.driver = {
++		.name = "ep93xx-spi",
++		.bus = &platform_bus_type,
++		.owner = THIS_MODULE,
++	},
++	.remove = __exit_p(spi_ep93xx_remove),
++	.shutdown = spi_ep93xx_shutdown,
++};
++
++static int __init spi_ep93xx_init(void)
++{
++	return platform_driver_probe(&ep93xx_spi_platform_driver, spi_ep93xx_probe);
++}
++
++static void __exit spi_ep93xx_exit(void)
++{
++	platform_driver_unregister(&ep93xx_spi_platform_driver);
++}
++
++module_init(spi_ep93xx_init);
++module_exit(spi_ep93xx_exit);
++
++MODULE_AUTHOR("Matthieu Crapet <mcrapet@gmail.com>");
++MODULE_DESCRIPTION("EP93xx SPI Controller Driver");
++MODULE_LICENSE("GPL");
++MODULE_VERSION("0.21");
+diff --git a/drivers/spi/spi_ep93xx.h b/drivers/spi/spi_ep93xx.h
+new file mode 100644
+index 0000000..6fad735
+--- /dev/null
++++ b/drivers/spi/spi_ep93xx.h
+@@ -0,0 +1,61 @@
++/*
++ *  EP93xx SPI (simple) include
++ *
++ * (c) Copyright 2008  Matthieu Crapet <mcrapet@gmail.com>
++ * Based on pxa2xx_spi.c by Stephen Street / StreetFire Sound Labs
++ *
++ * This program is free software; you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License as published by
++ * the Free Software Foundation; either version 2 of the License, or
++ * (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ */
++
++/* SSP Registers */
++#define SSPCR0   0x00 /* Control register 0 */
++#define SSPCR1   0x04 /* Control register 1 */
++#define SSPDR    0x08 /* Receice FIFO data register (16-bit read) */
++                      /* Transmit FIFO data register (16-bit write) */
++#define SSPSR    0x0C /* Status register */
++#define SSPCPSR  0x10 /* Clock prescale register (from 2 to 254, even number) */
++#define SSPIxR   0x14 /* Interrupt identification register (read) */
++                      /* Interrupt clear register (write) */
++
++/* SSP control registers bit fields & masks */
++#define SSP_CONTROL_SCR(x)         (((x) & 0xFF) << 8) /* Serial clock rate = SCLKOUT / CPSDVR / (1+SCR) */
++#define SSP_CONTROL_SPH            (1 << 7)            /* SCLKOUT phase (for SPI only) */
++#define SSP_CONTROL_SPO            (1 << 6)            /* SCLKOUT polarity (for SPI only) */
++#define SSP_CONTROL_FRF(x)         (((x) & 3) << 4)    /* Frame format (0=SPI) */
++#define SSP_CONTROL_DSS_4BIT_DATA   3
++#define SSP_CONTROL_DSS_8BIT_DATA   7
++#define SSP_CONTROL_DSS_15BIT_DATA 14
++#define SSP_CONTROL_DSS_16BIT_DATA 15
++#define SSP_CONTROL_DSS_MASK        0xF
++#define SSP_CONTROL_MS              (1 << 5)           /* 0=master, 1=slave (can be modified when SSE=0) */
++#define SSP_CONTROL_SSE             (1 << 4)           /* SSP operation enable (=1), disable (=0) */
++#define SSP_CONTROL_LBM             (1 << 3)           /* Loop back mode */
++#define SSP_CONTROL_RORIE           (1 << 2)           /* Interrupt enable : overrun condition */
++#define SSP_CONTROL_TIE             (1 << 1)           /* Interrupt enable : transmit fifo */
++#define SSP_CONTROL_RIE             (1 << 0)           /* Interrupt enable : receive fifo */
++
++/* SSP status register (read only) */
++#define SSP_STATUS_BUSY             (1 << 4)           /* Busy flag (0: SSP is idle) */
++#define SSP_STATUS_RFF              (1 << 3)           /* Receive fifo full ? (1=full) */
++#define SSP_STATUS_RNE              (1 << 2)           /* Receive fifo not empty ? (0=empty) */
++#define SSP_STATUS_TNF              (1 << 1)           /* Transmit fifo not full ? (0=full) */
++#define SSP_STATUS_TFE              (1 << 0)           /* Transmit fifo empty ? (1=empty) */
++
++/* SSP SSPIIR/SSPICR register (write 1 to clear interrupt) */
++#define SSP_SSPIxx_RORIS            (1 << 2)           /* Receive fifo overrun interrupt status */
++#define SSP_SSPIxx_TIS              (1 << 1)           /* Transmit fifo service request interrupt status */
++#define SSP_SSPIxx_RIS              (1 << 0)           /* Receive fifo service request interrupt status */
++
++/* Default configuration values */
++#define SPI_DEFAULT0 (SSP_CONTROL_DSS_16BIT_DATA | SSP_CONTROL_FRF(0) | SSP_CONTROL_SCR(0))
++#define SPI_DEFAULT1 (SSP_CONTROL_SSE | SSP_CONTROL_RORIE)
++#define SPI_DEFAULT_DIVISOR 254
+diff --git a/drivers/spi/tmp124.c b/drivers/spi/tmp124.c
+new file mode 100644
+index 0000000..7f7deaf
+--- /dev/null
++++ b/drivers/spi/tmp124.c
+@@ -0,0 +1,158 @@
++/*
++ *  TMP124 SPI protocol driver
++ *
++ * (c) Copyright 2008  Matthieu Crapet <mcrapet@gmail.com>
++ * Based on tle62x0.c by Ben Dooks, <ben@simtec.co.uk>
++ *
++ * This program is free software; you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License as published by
++ * the Free Software Foundation; either version 2 of the License, or
++ * (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * Note: The chip uses a '3-wire SPI' (miso and mosi are the same pin).
++ */
++
++#include <linux/device.h>
++#include <linux/kernel.h>
++#include <linux/spi/spi.h>
++
++struct tmp124_state {
++  struct spi_device *bus;
++  u8 tx_buff[2];
++  u8 rx_buff[2];
++};
++
++
++static inline int tmp124_write_then_read(struct tmp124_state *st)
++{
++  struct spi_message msg;
++  struct spi_transfer xfer[2] = {
++    {
++      .tx_buf      = st->tx_buff,
++      .rx_buf      = NULL,
++      .len         = 2,
++      .delay_usecs = 1000,
++    }, {
++      .tx_buf = NULL,
++      .rx_buf = st->rx_buff,
++      .len    = 2,
++    }
++  };
++
++  spi_message_init(&msg);
++  spi_message_add_tail(&xfer[0], &msg);
++  spi_message_add_tail(&xfer[1], &msg);
++
++  return spi_sync(st->bus, &msg);
++}
++
++
++static ssize_t tmp124_temperature_show(struct device *dev,
++    struct device_attribute *attr, char *buf)
++{
++  struct tmp124_state *st = dev_get_drvdata(dev);
++  int ret;
++
++  st->tx_buff[0] = 0x80;
++  st->tx_buff[1] = 0x00;
++
++  ret = tmp124_write_then_read(st);
++  if (ret < 0) {
++    dev_err(&st->bus->dev, "tmp124_write_then_read\n");
++    ret = 0;
++  } else {
++    signed short v = (st->rx_buff[0] << 8) + st->rx_buff[1];
++    signed long val;
++
++    val = v >> 3;
++
++    /* 2 digit precision (0.0625*100) */
++    val = (val * 50) / 8;
++    ret = snprintf(buf, PAGE_SIZE, "%ld.%02d\n", val/100, abs(val%100));
++  }
++  return ret;
++}
++
++
++static DEVICE_ATTR(temperature, S_IRUGO, tmp124_temperature_show, NULL);
++
++
++static int __devinit tmp124_probe(struct spi_device *spi)
++{
++  struct tmp124_state *st;
++  int ret;
++
++  st = kzalloc(sizeof(struct tmp124_state), GFP_KERNEL);
++  if (st == NULL) {
++    dev_err(&spi->dev, "no memory for device state\n");
++    return -ENOMEM;
++  }
++
++  /* required config */
++  spi->bits_per_word = 16;
++
++  st->bus = spi;
++
++  ret = spi_setup(spi);
++  if (ret) {
++    dev_err(&spi->dev, "setup device\n");
++    goto err;
++  }
++
++  ret = device_create_file(&spi->dev, &dev_attr_temperature);
++  if (ret) {
++    dev_err(&spi->dev, "cannot create temperature attribute\n");
++    goto err;
++  }
++
++  spi_set_drvdata(spi, st);
++  return 0;
++
++err:
++  kfree(st);
++  return ret;
++}
++
++
++static int __devexit tmp124_remove(struct spi_device *spi)
++{
++  struct tmp124_state *st = spi_get_drvdata(spi);
++
++  device_remove_file(&spi->dev, &dev_attr_temperature);
++  kfree(st);
++
++  return 0;
++}
++
++
++static struct spi_driver tmp124_driver = {
++  .driver = {
++    .name = "tmp124",
++    .owner  = THIS_MODULE,
++  },
++  .probe    = tmp124_probe,
++  .remove   = __devexit_p(tmp124_remove),
++};
++
++static __init int tmp124_init(void)
++{
++  return spi_register_driver(&tmp124_driver);
++}
++
++static __exit void tmp124_exit(void)
++{
++  spi_unregister_driver(&tmp124_driver);
++}
++
++module_init(tmp124_init);
++module_exit(tmp124_exit);
++
++MODULE_AUTHOR("Matthieu Crapet <mcrapet@gmail.com>");
++MODULE_DESCRIPTION("TMP124 SPI Protocol Driver");
++MODULE_LICENSE("GPL");
++MODULE_VERSION("0.1");
+diff --git a/drivers/video/console/Kconfig b/drivers/video/console/Kconfig
+index 06f87b0..66cc833 100644
+--- a/drivers/video/console/Kconfig
++++ b/drivers/video/console/Kconfig
+@@ -111,6 +111,27 @@ config DUMMY_CONSOLE_ROWS
+           The default value is 64, which should fit a 1280x1024 monitor.
+           Select 25 if you use a 640x480 resolution by default.
+ 
++config TS72XX_CONSOLE
++	tristate "TS-72xx text LCD console"
++	depends on ARCH_EP93XX && MACH_TS72XX
++	help
++	  Say Y to build a console driver for TS-72xx LCD (2x7) header.
++	  LCD display must be compatible with HD44780 controller.
++
++config TS72XX_CONSOLE_COLUMNS
++        int "Initial number of console screen columns"
++        depends on TS72XX_CONSOLE
++        default "20"
++        help
++          Dependant to your text LCD, 16 or 20 are legacy values.
++
++config TS72XX_CONSOLE_ROWS
++        int "Initial number of console screen rows"
++        depends on TS72XX_CONSOLE
++        default "4"
++        help
++          Dependant to your text LCD, 2 or 4 are legacy values.
++
+ config FRAMEBUFFER_CONSOLE
+ 	tristate "Framebuffer Console support"
+ 	depends on FB
+diff --git a/drivers/video/console/Makefile b/drivers/video/console/Makefile
+index ac46cc3..4244b5e 100644
+--- a/drivers/video/console/Makefile
++++ b/drivers/video/console/Makefile
+@@ -26,6 +26,8 @@ obj-$(CONFIG_PROM_CONSOLE)        += promcon.o promcon_tbl.o
+ obj-$(CONFIG_STI_CONSOLE)         += sticon.o sticore.o font.o
+ obj-$(CONFIG_VGA_CONSOLE)         += vgacon.o
+ obj-$(CONFIG_MDA_CONSOLE)         += mdacon.o
++obj-$(CONFIG_TS72XX_CONSOLE)      += ts72xx_con.o
++
+ obj-$(CONFIG_FRAMEBUFFER_CONSOLE) += fbcon.o bitblit.o font.o softcursor.o
+ ifeq ($(CONFIG_FB_TILEBLITTING),y)
+ obj-$(CONFIG_FRAMEBUFFER_CONSOLE)     += tileblit.o
+diff --git a/drivers/video/console/ts72xx_con.c b/drivers/video/console/ts72xx_con.c
+new file mode 100644
+index 0000000..726085f
+--- /dev/null
++++ b/drivers/video/console/ts72xx_con.c
+@@ -0,0 +1,423 @@
++/*
++ *  TS-72XX lcd console driver for Technologic Systems boards.
++ *
++ * (c) Copyright 2008  Matthieu Crapet <mcrapet@gmail.com>
++ * Based on linux/drivers/video/console/dummycon.c
++ * Thanks to Jim Jackson (lcdd-0.2beta)
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License
++ * as published by the Free Software Foundation; either version
++ * 2 of the License, or (at your option) any later version.
++ *
++ * Note: Port H (LCD_EN, LCD_RS, LCD_WR) uses the new generic GPIO API.
++ *       Port A is used manually used. To fix in future.
++ */
++
++#include <linux/kernel.h>
++#include <linux/module.h>
++#include <linux/console.h>
++#include <linux/vt_kern.h>
++#include <mach/hardware.h>
++#include <mach/gpio.h>
++
++#define DRV_VERSION "0.2"
++#define PFX "ts72xx_con: "
++
++#define LCD_COLUMNS  CONFIG_TS72XX_CONSOLE_COLUMNS
++#define LCD_ROWS     CONFIG_TS72XX_CONSOLE_ROWS
++
++/* HD44780 instruction set */
++#define CMD_CLEAR                                        (0x01)
++#define CMD_CURSOR_HOME                                  (0x02)
++#define CMD_ENTRY_MODE(cursor_dir, display_shift)        (0x04|(2*cursor_dir)|display_shift)
++#define CMD_DISPLAY_ONOFF(dis_on, cur_on, cur_blink_on)  (0x08|(4*dis_on)|(2*cur_on)|cur_blink_on)
++#define CMD_FUNCTION_SET(intf_8bit, n, f)                (0x20|(16*intf_8bit)|(8*n)|(4*f))
++#define CMD_DDRAM_ADDR(a)                                (0x80|(a))
++
++/* Port H, bit 3:5 */
++#define LCD_EN   EP93XX_GPIO_LINE_H(3)
++#define LCD_RS   EP93XX_GPIO_LINE_H(4)
++#define LCD_WR   EP93XX_GPIO_LINE_H(5)
++
++/* Timings */
++#define SETUP_TIME   15
++#define ENABLE_TIME  36
++#define HOLD_TIME    22
++
++#define hd44780_delay(x) asm volatile ( \
++  "1:\n"\
++  "subs %1, %1, #1;\n"\
++  "bne 1b;\n"\
++  : "=r" ((x)) : "r" ((x)) \
++);
++
++
++/* Prototypes */
++static void hd44780_wait(void);
++static void hd44780_send_data(unsigned char data);
++static void hd44780_send_command(unsigned char command);
++static void hd44780_init(void);
++static int hd44780_gotoxy(int x, int y);
++
++
++/* HD44780 controller */
++
++static void hd44780_wait(void)
++{
++  int i;
++  unsigned char c;
++
++  __raw_writeb(0x00, EP93XX_GPIO_A_DIRECTION);   // bus input
++  gpio_set_value(LCD_RS, 0);                     // low for control registers
++  gpio_set_value(LCD_WR, 1);                     // read command
++
++  do {
++    i = SETUP_TIME;
++    hd44780_delay(i);
++
++    gpio_set_value(LCD_EN, 1);
++
++    i = ENABLE_TIME;
++    hd44780_delay(i);
++
++    c = __raw_readb(EP93XX_GPIO_A_DATA);
++    gpio_set_value(LCD_EN, 0);
++  } while (c & 0x80); // busy flag
++
++  i = HOLD_TIME;
++  hd44780_delay(i);
++}
++
++
++static void hd44780_send_data(unsigned char data)
++{
++  int i;
++
++  __raw_writeb(0xFF, EP93XX_GPIO_A_DIRECTION);   // bus output
++  gpio_set_value(LCD_RS, 1);                     // high for data
++  gpio_set_value(LCD_WR, 0);                     // write data
++
++  i = SETUP_TIME;
++  hd44780_delay(i);
++
++  __raw_writeb(data, EP93XX_GPIO_A_DATA);
++  gpio_set_value(LCD_EN, 1);
++
++  i = ENABLE_TIME;
++  hd44780_delay(i);
++
++  gpio_set_value(LCD_EN, 0);
++
++  i = HOLD_TIME;
++  hd44780_delay(i);
++}
++
++
++static void hd44780_send_command(unsigned char command)
++{
++  int i;
++
++  __raw_writeb(0xFF, EP93XX_GPIO_A_DIRECTION);   // bus output
++  gpio_set_value(LCD_RS, 0);                     // low for control registers
++  gpio_set_value(LCD_WR, 0);                     // write command
++
++  i = SETUP_TIME;
++  hd44780_delay(i);
++
++  __raw_writeb(command, EP93XX_GPIO_A_DATA);
++  gpio_set_value(LCD_EN, 1);
++
++  i = ENABLE_TIME;
++  hd44780_delay(i);
++
++  gpio_set_value(LCD_EN, 0);
++
++  i = HOLD_TIME;
++  hd44780_delay(i);
++}
++
++
++static void hd44780_init(void)
++{
++  int i;
++
++  gpio_direction_output(LCD_EN, 0);
++  gpio_direction_output(LCD_RS, 0);
++  gpio_direction_output(LCD_WR, 0);
++
++  /* Port A (8 bits) is data bus */
++  __raw_writeb(0x00, EP93XX_GPIO_A_DATA);
++  __raw_writeb(0x00, EP93XX_GPIO_A_DIRECTION);
++
++  /* 8-bit mode, double line, 5x7 dot character format */
++  hd44780_send_command(CMD_FUNCTION_SET(1,1,1));
++  i = 5000;
++  hd44780_delay(i);
++
++  /* Display on and blink cursor on */
++  hd44780_send_command(CMD_DISPLAY_ONOFF(1,1,1));
++  hd44780_wait();
++
++  /* Cursor in increment position and shift is invisible */
++  hd44780_send_command(CMD_ENTRY_MODE(0,0));
++  hd44780_wait();
++
++  /* Clean display and return cursor to home position */
++  hd44780_send_command(CMD_CLEAR);
++  hd44780_wait();
++}
++
++
++static int hd44780_gotoxy(int x, int y)
++{
++  const unsigned char lines[4] = { 0x00, 0x40, 0x14, 0x54 };
++
++  if ((x == 0) && (y == 0)) {
++    hd44780_send_command(CMD_CURSOR_HOME);
++    hd44780_wait();
++  } else if (y < 4) {
++    hd44780_send_command(CMD_DDRAM_ADDR(lines[y]+x));
++    hd44780_wait();
++  }
++
++  return 0;
++}
++
++
++/* Console operation functions */
++
++static const char *lcdcon_startup(void)
++{
++  return "ts72xx lcd console";
++}
++
++
++static void lcdcon_init(struct vc_data *vc, int init)
++{
++  hd44780_init();
++
++  vc->vc_can_do_color = 0;
++  vc->vc_video_erase_char = 0x20;
++
++  if (init) {
++    vc->vc_cols = LCD_COLUMNS;
++    vc->vc_rows = LCD_ROWS;
++  } else
++    vc_resize(vc, LCD_COLUMNS, LCD_ROWS);
++
++}
++
++
++static void lcdcon_deinit(struct vc_data *vc)
++{
++}
++
++
++static void lcdcon_clear(struct vc_data *vc, int sy, int sx,
++    int height, int width)
++{
++  int i, j;
++
++  if (!height || !width)
++    return;
++
++  for (i = 0; i < height; i++) {
++    hd44780_gotoxy(sx, sy + i);
++    for (j = 0; j < width; j++) {
++      hd44780_send_data((unsigned char)vc->vc_video_erase_char);
++      hd44780_wait();
++    }
++  }
++
++}
++
++
++static int lcdcon_blank(struct vc_data *vc, int blank, int mode_switch)
++{
++  unsigned char c;
++
++  if (blank == 0) {
++    c = CMD_DISPLAY_ONOFF(1,1,1);    /* Display on */
++  } else {
++    c = CMD_DISPLAY_ONOFF(0,1,1);    /* Display off */
++  }
++
++  hd44780_send_command(c);
++  hd44780_wait();
++
++  return 1;
++}
++
++
++static int lcdcon_set_palette(struct vc_data *vc, unsigned char *table)
++{
++  return -EINVAL;
++}
++
++
++static void lcdcon_putc(struct vc_data *vc, int c, int y, int x)
++{
++  if (vc->vc_mode != KD_TEXT)
++    return;
++
++  hd44780_gotoxy(x, y);
++  hd44780_send_data((unsigned char)c);
++  hd44780_wait();
++}
++
++
++static void lcdcon_putcs(struct vc_data *vc, const unsigned short *s,
++    int count, int y, int x)
++{
++  if (vc->vc_mode != KD_TEXT)
++    return;
++
++  hd44780_gotoxy(x, y);
++  while (count--) {
++    hd44780_send_data((unsigned char)(*s));
++    hd44780_wait();
++    s++;
++  }
++
++}
++
++
++static void lcdcon_cursor(struct vc_data *vc, int mode)
++{
++  hd44780_gotoxy(vc->vc_x, vc->vc_y);
++
++  switch (mode) {
++    case CM_ERASE:
++      hd44780_send_command(CMD_DISPLAY_ONOFF(1,0,0)); // Cursor off
++      hd44780_wait();
++      break;
++
++    case CM_DRAW:
++      hd44780_send_command(CMD_DISPLAY_ONOFF(1,1,1)); // Cursor on, Blinking on
++      hd44780_wait();
++      break;
++
++    case CM_MOVE:
++      printk("lcdcon_cursor CM_MOVE not implemented\n");
++      break;
++  }
++
++}
++
++
++static int lcdcon_scroll(struct vc_data *vc, int t, int b, int dir, int count)
++{
++  int i;
++
++  if (!count)
++    return 0;
++
++  /* Special case */
++  //if (t || b != vc->vc_rows)
++  // scroll area
++
++  switch (dir) {
++    case SM_UP:
++      if (count > vc->vc_rows)
++        count = vc->vc_rows;
++
++      for (i = 0; i < (vc->vc_rows - count); i++) {
++        lcdcon_putcs(vc, vc->vc_screenbuf + (vc->vc_y - i)*vc->vc_cols,
++            vc->vc_cols, vc->vc_y - i -1, 0);
++      }
++
++      /* Clear last line */
++      hd44780_gotoxy(0, vc->vc_y);
++      for (i = 0; i < vc->vc_cols; i++) {
++        hd44780_send_data((unsigned char)vc->vc_video_erase_char);
++        hd44780_wait();
++      }
++      break;
++
++    case SM_DOWN:
++      printk("lcdcon_scroll DOWN (t=%d b=%d count=%d) not implemtented\n", t,b,count);
++      break;
++  }
++
++  return 0;
++}
++
++
++static void lcdcon_bmove(struct vc_data *vc, int sy, int sx,
++    int dy, int dx, int height, int width)
++{
++  int i, j;
++
++  if (!height || !width)
++    return;
++
++  for (i = 0; i < height; i++) {
++    hd44780_gotoxy(dx, dy + i);
++    for (j = 0; j < width; j++) {
++      hd44780_send_data((unsigned char)(*(vc->vc_screenbuf +
++              (sy+i)*vc->vc_cols + (sx+j) )));
++      hd44780_wait();
++    }
++  }
++}
++
++
++static int lcdcon_dummy(void)
++{
++  return 0;
++}
++
++#define DUMMY (void *)lcdcon_dummy
++
++
++/* Main structure */
++const struct consw ts72xx_lcd_con = {
++  .owner =    THIS_MODULE,
++  .con_startup = lcdcon_startup,
++  .con_init    = lcdcon_init,
++  .con_deinit  = lcdcon_deinit,
++  .con_clear   = lcdcon_clear,
++  .con_putc    = lcdcon_putc,
++  .con_putcs   = lcdcon_putcs,
++  .con_cursor  = lcdcon_cursor,
++  .con_scroll  = lcdcon_scroll,
++  .con_bmove   = lcdcon_bmove,
++  .con_switch  = DUMMY,
++  .con_blank   = lcdcon_blank,
++
++  /* We cannot change color, fonts on character LCD */
++  .con_font_set     = DUMMY,
++  .con_font_get     = DUMMY,
++  .con_font_default = DUMMY,
++  .con_font_copy    = DUMMY,
++  .con_set_palette  = lcdcon_set_palette,
++
++  //.con_scrolldelta   = lcdcon_scrolldelta,
++  //.con_set_origin    = DUMMY,
++  //.con_save_screen   = lcdcon_save_screen,
++  //.con_build_attr    = lcdcon_build_attr,
++  //.con_invert_region = lcdcon_invert_region,
++  //.con_screen_pos    = lcdcon_screen_pos,
++  //.con_getxy         = lcdcon_getxy,
++};
++
++/* Module functions */
++
++static int __init ts72xx_lcd_init(void)
++{
++  return take_over_console(&ts72xx_lcd_con, 0, MAX_NR_CONSOLES-1, 1);
++}
++
++static void __exit ts72xx_lcd_exit(void)
++{
++  unregister_con_driver(&ts72xx_lcd_con);
++}
++
++MODULE_AUTHOR("Matthieu Crapet <mcrapet@gmail.com>");
++MODULE_DESCRIPTION("TS-72xx lcd console driver");
++MODULE_LICENSE("GPL");
++MODULE_VERSION(DRV_VERSION);
++
++module_init(ts72xx_lcd_init);
++module_exit(ts72xx_lcd_exit);
+diff --git a/drivers/watchdog/Kconfig b/drivers/watchdog/Kconfig
+index c510367..fac3093 100644
+--- a/drivers/watchdog/Kconfig
++++ b/drivers/watchdog/Kconfig
+@@ -217,6 +217,18 @@ config DAVINCI_WATCHDOG
+ 	  NOTE: once enabled, this timer cannot be disabled.
+ 	  Say N if you are unsure.
+ 
++config TS72XX_WATCHDOG
++	tristate "TS-72xx Watchdog"
++	depends on WATCHDOG && ARCH_EP93XX && MACH_TS72XX
++	help
++	  Say Y here if to include support for the CPLD watchdog
++	  included on Technologic Systems SBC.
++
++	  NOTE: timeout value is given in milliseconds, not in seconds.
++
++	  To compile this driver as a module, choose M here: the
++	  module will be called ts72xx_wdt.
++
+ # ARM26 Architecture
+ 
+ # AVR32 Architecture
+diff --git a/drivers/watchdog/Makefile b/drivers/watchdog/Makefile
+index e0ef123..890024b 100644
+--- a/drivers/watchdog/Makefile
++++ b/drivers/watchdog/Makefile
+@@ -39,6 +39,7 @@ obj-$(CONFIG_EP93XX_WATCHDOG) += ep93xx_wdt.o
+ obj-$(CONFIG_PNX4008_WATCHDOG) += pnx4008_wdt.o
+ obj-$(CONFIG_IOP_WATCHDOG) += iop_wdt.o
+ obj-$(CONFIG_DAVINCI_WATCHDOG) += davinci_wdt.o
++obj-$(CONFIG_TS72XX_WATCHDOG) += ts72xx_wdt.o
+ 
+ # ARM26 Architecture
+ 
+diff --git a/drivers/watchdog/ts72xx_wdt.c b/drivers/watchdog/ts72xx_wdt.c
+new file mode 100644
+index 0000000..7cbac78
+--- /dev/null
++++ b/drivers/watchdog/ts72xx_wdt.c
+@@ -0,0 +1,332 @@
++/*
++ *	TS-72xx Watchdog Driver for Technologic Systems boards.
++ *
++ *  Based on ep93xx_wdt.c by Lehtiniemi <rayl@mail.com> &
++ *      Alessandro Zummo <a.zummo@towertech.it>
++ *  and ib700wdt.c by Charles Howes <chowes@vsol.net>
++ *  and mpc83xx_wdt.c by Dave Updegraff <dave@cray.org> &
++ *      Kumar Gala <galak@kernel.crashing.org>
++ *
++ *	(c) Copyright 2006  Matthieu Crapet <mcrapet@gmail.com>
++ *
++ *	This program is free software; you can redistribute it and/or
++ *	modify it under the terms of the GNU General Public License
++ *	as published by the Free Software Foundation; either version
++ *	2 of the License, or (at your option) any later version.
++ *
++ * This driver only deals with native timeout provided by CPLD :
++ * 1/4s, 1/2s, 1s, 2s, 4s and 8s. No external timer is used.
++ * Notice that we must ping before modifying the control register.
++ */
++
++#include <linux/module.h>
++#include <linux/moduleparam.h>
++#include <linux/types.h>
++#include <linux/kernel.h>
++#include <linux/fs.h>
++#include <linux/miscdevice.h>
++#include <linux/platform_device.h>
++#include <linux/init.h>
++#include <linux/watchdog.h>
++#include <asm/io.h>
++#include <asm/uaccess.h>
++#include <asm/system.h>
++#include <asm/mach-types.h>
++
++#define WATCHDOG_VERSION "0.2"
++#define PFX "ts72xx_wdt: "
++
++#define WATCHDOG_TIMEOUT 8000 /* 8 seconds */
++#define WDT_IN_USE      0
++#define WDT_OK_TO_CLOSE 1
++
++static unsigned long ts72xx_wdt_status;
++static unsigned char ts72xx_wdt_cpld_value = 0x7;
++static int nowayout = WATCHDOG_NOWAYOUT;
++static int timeout = WATCHDOG_TIMEOUT;
++
++static int ts72xx_wdt_times[12] = {
++	6000, 3000, 1500, 750, 275, 0,
++	8000, 4000, 2000, 1000, 500, 250
++};
++
++static void __iomem *control_register;
++static void __iomem *feed_register;
++
++
++/*
++ *	Kernel methods.
++ */
++
++static inline void ts72xx_wdt_ping(void)
++{
++	__raw_writew(0x05, feed_register);
++}
++
++static inline void ts72xx_wdt_enable(void)
++{
++	__raw_writew(0x05, feed_register);
++	__raw_writew(ts72xx_wdt_cpld_value, control_register);
++}
++
++static inline void ts72xx_wdt_disable(void)
++{
++	__raw_writew(0x05, feed_register);
++	__raw_writew(0, control_register);
++}
++
++static inline void ts72xx_parse_timeout(int value)
++{
++	unsigned char cpld_value = 0x7;
++	int i;
++
++	if ((value > 8000) || (value < 250)) {
++		timeout = WATCHDOG_TIMEOUT;
++		printk(KERN_INFO PFX "Timeout value out of range, set to %d\n", timeout);
++	} else {
++		for (i = 0; i < 6; i++) {
++			if (value >= ts72xx_wdt_times[i]) {
++				timeout = ts72xx_wdt_times[i+6];
++
++				if (value != timeout)
++					printk(KERN_INFO PFX "Timeout value rounded to %d\n", timeout);
++
++				if (i >= 3) /* cpld_value can't be 4 */
++					i++;
++
++				cpld_value = 7 - i;
++				break;
++			}
++		}
++	}
++
++	ts72xx_wdt_cpld_value = cpld_value;
++}
++
++static ssize_t ts72xx_wdt_write(struct file *file, const char __user *buf,
++				 size_t count, loff_t *ppos)
++{
++	/* Can't seek (pwrite) on this device */
++	if (*ppos != file->f_pos)
++		return -ESPIPE;
++
++	if (count) {
++		if (!nowayout) {
++			size_t i;
++
++			clear_bit(WDT_OK_TO_CLOSE, &ts72xx_wdt_status);
++
++			for (i = 0; i != count; i++) {
++				char c;
++
++				if (get_user(c, buf + i))
++					return -EFAULT;
++
++				if (c == 'V')
++					set_bit(WDT_OK_TO_CLOSE, &ts72xx_wdt_status);
++				else
++					clear_bit(WDT_OK_TO_CLOSE, &ts72xx_wdt_status);
++			}
++		}
++		ts72xx_wdt_ping();
++	}
++
++	return count;
++}
++
++static int ts72xx_wdt_ioctl(struct inode *inode, struct file *file,
++			     unsigned int cmd, unsigned long arg)
++{
++	int new_margin;
++	int ret = -ENOIOCTLCMD;
++
++	static struct watchdog_info ident = {
++		.options = WDIOF_SETTIMEOUT | WDIOF_KEEPALIVEPING | WDIOF_MAGICCLOSE,
++		.firmware_version = 1,
++		.identity = "TS-72xx Watchdog",
++	};
++
++	switch (cmd) {
++		case WDIOC_GETSUPPORT:
++			ret = copy_to_user((struct watchdog_info __user *)arg, &ident,
++			sizeof(ident)) ? -EFAULT : 0;
++			break;
++
++		case WDIOC_GETSTATUS:
++		case WDIOC_GETBOOTSTATUS:
++			ret = put_user(0, (int __user *)arg);
++			break;
++
++		case WDIOC_KEEPALIVE:
++			ts72xx_wdt_ping();
++			ret = 0;
++			break;
++
++		case WDIOC_SETTIMEOUT:
++			if (get_user(new_margin, (int __user *)arg))
++				return -EFAULT;
++
++			ts72xx_parse_timeout(new_margin);
++			ts72xx_wdt_enable();
++			/* Fall */
++
++		case WDIOC_GETTIMEOUT:
++			ret = put_user(timeout, (int __user *)arg);
++			break;
++	}
++
++	return ret;
++}
++
++static int ts72xx_wdt_open(struct inode *inode, struct file *file)
++{
++	if (test_and_set_bit(WDT_IN_USE, &ts72xx_wdt_status))
++		return -EBUSY;
++
++	if (nowayout) {
++		__module_get(THIS_MODULE);
++	}
++
++	ts72xx_wdt_enable();
++	ts72xx_wdt_ping();
++
++	return nonseekable_open(inode, file);
++}
++
++static int ts72xx_wdt_close(struct inode *inode, struct file *file)
++{
++	if (test_bit(WDT_OK_TO_CLOSE, &ts72xx_wdt_status))
++		ts72xx_wdt_disable();
++	else
++		printk(KERN_CRIT PFX "Device file closed unexpectedly. "
++		       "Will not stop the WDT!\n");
++
++	clear_bit(WDT_IN_USE, &ts72xx_wdt_status);
++
++	return 0;
++}
++
++/*
++ *	Kernel Interfaces
++ */
++
++static struct file_operations ts72xx_wdt_fops = {
++	.owner		= THIS_MODULE,
++	.llseek		= no_llseek,
++	.write		= ts72xx_wdt_write,
++	.ioctl		= ts72xx_wdt_ioctl,
++	.open		= ts72xx_wdt_open,
++	.release	= ts72xx_wdt_close,
++};
++
++static struct miscdevice ts72xx_wdt_miscdev = {
++	.minor = WATCHDOG_MINOR,
++	.name = "watchdog",
++	.fops = &ts72xx_wdt_fops,
++};
++
++static void ts72xx_wdt_shutdown(struct platform_device *dev)
++{
++	ts72xx_wdt_disable();
++}
++
++static int __devinit ts72xx_wdt_probe(struct platform_device *dev)
++{
++	struct resource *r;
++	int ret;
++
++	if (!machine_is_ts72xx())
++		return -ENODEV;
++
++	r = platform_get_resource(dev, IORESOURCE_MEM, 0);
++
++	if (!r) {
++		ret = -ENODEV;
++		goto err_out;
++	}
++
++	control_register = ioremap(r->start, r->end - r->start + 1);
++
++	if (control_register == NULL) {
++		ret = -ENOMEM;
++		goto err_out;
++	}
++
++	r = platform_get_resource(dev, IORESOURCE_MEM, 1);
++
++	if (!r) {
++		ret = -ENODEV;
++		goto err_unmap1;
++	}
++
++	feed_register = ioremap(r->start, r->end - r->start + 1);
++
++	if (feed_register == NULL) {
++		ret = -ENOMEM;
++		goto err_unmap1;
++	}
++
++	ret = misc_register(&ts72xx_wdt_miscdev);
++	if (ret) {
++		printk(KERN_ERR PFX "cannot register miscdev on minor=%d "
++		       "(err=%d)\n", WATCHDOG_MINOR, ret);
++		goto err_unmap2;
++	}
++
++	printk(KERN_INFO PFX "TS-72xx watchdog driver, v%s\n", WATCHDOG_VERSION);
++	ts72xx_parse_timeout(timeout);
++
++	return 0;
++
++err_unmap2:
++	iounmap(feed_register);
++err_unmap1:
++	iounmap(control_register);
++err_out:
++	return ret;
++}
++
++static int __devexit ts72xx_wdt_remove(struct platform_device *dev)
++{
++	misc_deregister(&ts72xx_wdt_miscdev);
++	iounmap(feed_register);
++	iounmap(control_register);
++
++	return 0;
++}
++
++static struct platform_driver ts72xx_wdt_driver = {
++	.probe		= ts72xx_wdt_probe,
++	.remove		= __devexit_p(ts72xx_wdt_remove),
++	.shutdown	= ts72xx_wdt_shutdown,
++	.driver	= {
++		.owner	= THIS_MODULE,
++		.name	= "ts72xx-wdt",
++	},
++};
++
++static int __init ts72xx_wdt_init(void)
++{
++	return platform_driver_register(&ts72xx_wdt_driver);
++}
++
++static void __exit ts72xx_wdt_exit(void)
++{
++	platform_driver_unregister(&ts72xx_wdt_driver);
++}
++
++module_init(ts72xx_wdt_init);
++module_exit(ts72xx_wdt_exit);
++
++#ifdef CONFIG_WATCHDOG_NOWAYOUT
++module_param(nowayout, int, 0);
++MODULE_PARM_DESC(nowayout, "Watchdog cannot be stopped once started (default=CONFIG_WATCHDOG_NOWAYOUT)");
++#endif
++
++module_param(timeout, int, 0);
++MODULE_PARM_DESC(timeout,"Watchdog timeout in milliseconds (250..8000, default=" __MODULE_STRING(WATCHDOG_TIMEOUT) ")");
++
++MODULE_AUTHOR("Matthieu Crapet <mcrapet@gmail.com>");
++MODULE_DESCRIPTION("TS-72xx watchdog driver");
++MODULE_LICENSE("GPL");
++MODULE_ALIAS_MISCDEV(WATCHDOG_MINOR);
