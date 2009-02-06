@@ -1,0 +1,193 @@
+Release notes about "linux-2.6.28.3-ts7200_matt-1" patch
+This is mainly created for EP9301 & EP9302 CPUs and more especially for TS-7200, TS-7250 & TS-7260
+SBCs manufactured by Technologic Systems (http://www.embeddedarm.com).
+
+Short version
+=============
+
+  EP93xx processor
+  ----------------
+  - Ethernet
+  - RTC (no backed up RAM)
+  - I2C (based on gpio)
+  - SPI (master driver)
+  - USB 2.0
+  - Leds (red and green)
+  - /proc/cpuinfo : ep93xx cpu revision & uniq ID
+
+  TS-72xx SBCs
+  ------------
+  - Console LCD text driver (LCD 2x7 header)
+  - Cpufreq driver (configured for ep9301, not tested with ep9302)
+  - Input matrix keypad driver (DIO header)
+  - Watchdog (CPLD of TS-7200)
+  - PATA support: TS-7200 CF
+  - Max197 option (platform driver)
+  - TMP124 spi slave driver
+  - Flash mapping driver for 8mo NOR flash (physmap mapping driver can be used too)
+  - /proc/driver/sbcinfo : some infos about TS-72XX sbc
+
+  PC/104 peripherals
+  -----------------
+  - TS-SER1 support [/dev/ttyS0]
+  - TS-9600: PATA support and legacy IDE support
+  - TS-5620 (RTC daughterboard for TS-7200) support
+  - TS-ETH100 support
+
+
+Notes
+=====
+This patch reuse previous work for kernel 2.6.27.4 (and 2.6.24.4).
+Motivation was changing to new memory model "sparsemem". We finally get rid of "discontigmem" hack.
+2.6.28 kernel also brings a new option for selecting UART for early messages output.
+
+Played around with "Hunk #x FAILED" messages ;)
+Individual patches are provided. Cumulative patch is still there.
+
+For TS-72XX machines, I2C pins are hardcoded to be on DIO 2x8 header: DIO_6 for sda and DIO_7 for scl.
+
+TODO:
+* ts72xx_con: if no LCD is connected, modprobe is stuck (wait busy flag from LCD on GPIO port A)
+
+
+Long version
+============
+
+To compile (once patch is applied):
+$ cp /../ts7200_defconfig /../linux-2.6.27.8/arch/arm/configs/
+$ make ts7200_defconfig
+$ vi +/^CROSS Makefile                  // fix path of your toolchain
+$ make menuconfig
+$ make
+$ INSTALL_MOD_PATH=/your-path-to/nfsroot make modules_install
+
+
+  EP93xx processor
+  ----------------
+
+  # EP93XX spi controller (module named spi_ep93xx.ko). It is a platform driver.
+    Driver has been reworked by Marco <greywolf82@hotmail.it> for adding a workqueue, and dynamic frenquency setup.
+
+  # Leds.
+    Example1:                                    Example2:
+    $ cd /sys/class/leds/ep93xx:red              $ cd /sys/class/leds/ep93xx:green
+    $ echo timer >trigger                        $ echo none >trigger
+    $ echo 1000 >delay_on                        $ echo 100 >brightness
+    $ echo 500 >delay_off
+
+  # /proc/cpuinfo  has been slightly patched to add ep93xx features. Thanks to Petr Stetiar.
+
+    $ cat /proc/cpuinfo
+    Processor       : ARM920T rev 0 (v4l)
+    BogoMIPS        : 82.73
+    Features        : swp half thumb 
+    CPU implementer : 0x41
+    CPU architecture: 4T
+    CPU variant     : 0x1
+    CPU part        : 0x920
+    CPU revision    : 0
+    Cache type      : write-back
+    Cache clean     : cp15 c7 ops
+    Cache lockdown  : format A
+    Cache format    : Harvard
+    I size          : 16384
+    I assoc         : 64
+    I line length   : 32
+    I sets          : 8
+    D size          : 16384
+    D assoc         : 64
+    D line length   : 32
+    D sets          : 8
+    
+    Hardware        : Technologic Systems TS-72xx SBC
+    Revision        : 0004
+    Serial          : 0000000092011e06
+
+  # I2C pins (default ep93xx) are set to:
+    SCL pin: EP93XX_GPIO_LINE_EECLK (port G, bit 0)
+    SDA pin: EP93XX_GPIO_LINE_EEDAT (port G, bit 1)
+    But for TS-72xx machines, it is defined as:
+    SCL pin: EP93XX_GPIO_LINE_EGPIO15 (DIO_7: TS-72xx DIO 2x8 header)
+    SDA pin: EP93XX_GPIO_LINE_EGPIO14 (DIO_6: TS-72xx DIO 2x8 header)
+
+  # CPUfreq (tested on EP9301 only - 166Mhz max)
+    $ cd /sys/devices/system/cpu/cpu0/cpufreq/
+    $ cat scaling_available_governors
+    conservative ondemand userspace powersave performance 
+ 
+    Powersave governor                         Performance governor
+    $ echo powersave >scaling_governor         $ echo performance >scaling_governor 
+    $ cat cpuinfo_cur_freq                     $ cat cpuinfo_cur_freq 
+    41472                                      165888
+    $ cat /proc/cpuinfo | grep MIPS            $ cat /proc/cpuinfo | grep MIPS
+    BogoMIPS        : 20.68                    BogoMIPS        : 82.73
+
+
+  TS-72xx SBCs
+  ------------
+
+  # TMP124 spi slave driver (module named tmp124.ko). This an "3-wire SPI" device (miso and mosi shares the same pin).
+    Cirrus IP can only handle regular 4-wire SPI. Due to TS-7200 hardware, it's only read only (read sensor).
+    One entry is exported in sysfs.
+
+    $ cat /sys/bus/spi/devices/spi1.0/temperature
+    28.56
+
+    Bug: first cat always returns 0, the following reads are good.
+
+  # Flash mapping driver for 8mo NOR strata-flash. This is some harcoded partitions values:
+    [0x60000000 - 0x60020000[ size=0x20000  (131072 = 1 block)    : TS-BOOTROM (read-only)
+    [0x60020000 - 0x60620000[ size=0x600000 (6291456 = 48 blocks) : RootFS
+    [0x60620000 - 0x60800000| size=0x1E0000 (1966080 = 15 blocks) : Redboot
+
+  # /proc/driver/sbcinfo entry (module named ts72xx_sbcinfo.ko). Original idea by Liberty Young (Technologic Systems).
+    Print some information about the board.
+
+    $ cat /proc/driver/sbcinfo 
+    Model             : TS-7200 (PLD rev C)
+    Option max197 A/D : yes
+    Option RS-485     : no
+    Jumpers           : JP2=y JP3=y JP4=n JP5=n JP6=n
+
+  # MAX197 option. 8 (12-bit) ADC channels (module named ts72xx_max197)
+    $ cd /sys/devices/platform/ts72xx-max197
+    $ cat ch1
+    0.000
+
+    For configuring range input:
+    $ echo 5  >ch2                // range 0..5V (this is the default)
+    $ echo 10 >ch3                // range 0..10V
+    $ echo -5 >ch4                // range -5..5V
+    $ echo -10 >ch5               // range -10..10V
+
+    If average option is compiled:
+    $ cd /sys/module/ts72xx_max197/parameters
+    $ cat average 
+    1
+    $ echo 2 >average             // two samples are acquired foa one request
+
+
+  PC/104 peripherals
+  -----------------
+
+  # TS-SER1. COM number is autodetected by driver (by writing to scratch register of uart 16550A)
+
+  # TS-ETH100. The main ethernet driver is ax88796 (introduced in Kernel 2.6.23).
+    This is only a platform device driver. Except that the main driver has to be modified :
+    NE2000 registers are 8-bit access, except for DATAPORT which is 16-bit access.
+
+    Load the driver at boot time is rather simple:
+    echo ax88796_ts_eth100 >>/etc/modules
+
+
+ChangeLog
+=========
+linux-2.6.28.3-ts7200_matt-1 (2009.feb.07)
+
+	* Initial release
+	* Core: changed memory model (from DISCONTIGMEM to ARCH_SPARSEMEM).
+	  ts72xx_base.patch is smaller (-13kb).
+	* spi: in ts72xx.c, spi_register_board_info is called only if CONFIG_SPI_TMP124 is defined.
+	* eth: fixed ep93xx_eth driver (switched to version 0.11)
+	* cpufreq: fixed driver for module compilation
+
