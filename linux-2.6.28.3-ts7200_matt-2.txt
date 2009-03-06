@@ -1,6 +1,15 @@
-Release notes about "linux-2.6.28.3-ts7200_matt-1" patch
+Release notes about "linux-2.6.28.3-ts7200_matt-2" patch
 This is mainly created for EP9301 & EP9302 CPUs and more especially for TS-7200, TS-7250 & TS-7260
 SBCs manufactured by Technologic Systems (http://www.embeddedarm.com).
+
+linux-arm-kernel mailing list is a good place to find new material.
+
+Lots of people are doing great work for ep93xx architecture.
+You can find their submitted patches here:
+[Hartley Sweeten]   http://www.arm.linux.org.uk/developer/patches/search.php?uid=1443
+[Ryan Mallon]       http://www.arm.linux.org.uk/developer/patches/search.php?uid=1556
+[Lennert Buytenhek] http://www.arm.linux.org.uk/developer/patches/search.php?uid=535
+
 
 Short version
 =============
@@ -21,7 +30,7 @@ Short version
   - Cpufreq driver (configured for ep9301, not tested with ep9302)
   - Input matrix keypad driver (DIO header)
   - Watchdog (CPLD of TS-7200)
-  - PATA support: TS-7200 CF
+  - IDE & PATA support: TS-7200 CF
   - Max197 option (platform driver)
   - TMP124 spi slave driver
   - Flash mapping driver for 8mo NOR flash (physmap mapping driver can be used too)
@@ -30,7 +39,7 @@ Short version
   PC/104 peripherals
   -----------------
   - TS-SER1 support [/dev/ttyS0]
-  - TS-9600: PATA support and legacy IDE support
+  - TS-9600: PATA support
   - TS-5620 (RTC daughterboard for TS-7200) support
   - TS-ETH100 support
 
@@ -45,6 +54,9 @@ Played around with "Hunk #x FAILED" messages ;)
 Individual patches are provided. Cumulative patch is still there.
 
 For TS-72XX machines, I2C pins are hardcoded to be on DIO 2x8 header: DIO_6 for sda and DIO_7 for scl.
+
+For potential memory problems, try adding some params to the kernel command:
+mem=8M@0x0 mem=8M@16M mem=8M@64M mem=8M@80M
 
 TODO:
 * ts72xx_con: if no LCD is connected, modprobe is stuck (wait busy flag from LCD on GPIO port A)
@@ -182,6 +194,13 @@ $ INSTALL_MOD_PATH=/your-path-to/nfsroot make modules_install
 
 ChangeLog
 =========
+linux-2.6.28.3-ts7200_matt-2 (2009.mar.07)
+
+	> This patch (also) applies correctly on vanilla 2.6.28.7 kernel
+	* Fixed "arch/arm/mach-ep93xx/include/mach/memory.h" (thanks to all [ts-7000]
+	  yahoogroup for testing). Note that `cat /proc/pagetypeinfo` still oops. 
+	* Added legacy ide driver for TS-7200 compact flash (conflict with PATA)
+
 linux-2.6.28.3-ts7200_matt-1 (2009.feb.07)
 
 	* Initial release

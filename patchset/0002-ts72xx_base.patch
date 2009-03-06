@@ -1,19 +1,19 @@
-From 536988a66b339cdbeed8c70634fc107a20ee22d9 Mon Sep 17 00:00:00 2001
+From 13df74074d604b745f68309993e5853e47f211c6 Mon Sep 17 00:00:00 2001
 From: Matthieu Crapet <mcrapet@gmail.com>
-Date: Sat, 7 Feb 2009 13:27:24 +0100
-Subject: [PATCH 02/20] ts72xx_base
- - using sparse memory model
+Date: Sat, 7 Mar 2009 13:58:27 +0100
+Subject: [PATCH 2/2] ts72xx_base
 
+- using sparse memory model
 ---
  arch/arm/Kconfig                                |    1 +
  arch/arm/mach-ep93xx/Kconfig                    |    9 +++
  arch/arm/mach-ep93xx/include/mach/ep93xx-regs.h |   11 +++
- arch/arm/mach-ep93xx/include/mach/memory.h      |   14 ++++
+ arch/arm/mach-ep93xx/include/mach/memory.h      |   27 +++++++
  arch/arm/mach-ep93xx/include/mach/ts72xx.h      |   86 ++++++++++++++++++++++-
  arch/arm/mach-ep93xx/include/mach/uncompress.h  |   65 +++++++++++++++++
  arch/arm/mach-ep93xx/ts72xx.c                   |   38 ++++++++++-
  arch/arm/mm/proc-arm920.S                       |    5 +-
- 8 files changed, 225 insertions(+), 4 deletions(-)
+ 8 files changed, 238 insertions(+), 4 deletions(-)
 
 diff --git a/arch/arm/Kconfig b/arch/arm/Kconfig
 index 9722f8b..ab4ae52 100644
@@ -98,24 +98,37 @@ index 22d6c9a..40d5ce4 100644
  
  #define EP93XX_WATCHDOG_BASE		(EP93XX_APB_VIRT_BASE + 0x00140000)
 diff --git a/arch/arm/mach-ep93xx/include/mach/memory.h b/arch/arm/mach-ep93xx/include/mach/memory.h
-index f1b6335..645149e 100644
+index f1b6335..ef6fc3d 100644
 --- a/arch/arm/mach-ep93xx/include/mach/memory.h
 +++ b/arch/arm/mach-ep93xx/include/mach/memory.h
-@@ -10,5 +10,19 @@
+@@ -10,5 +10,32 @@
  #define __bus_to_virt(x)	__phys_to_virt(x)
  #define __virt_to_bus(x)	__virt_to_phys(x)
  
-+#ifndef __ASSEMBLY__
-+static inline unsigned long __phys_to_virt(unsigned long pa)
-+{
-+	return (pa & 0x07ffffff) | ((pa & 0xe0000000) ? 0x08000000 : 0);
-+}
++/*
++ * Non-linear mapping like so:
++ * phys       => virt
++ * 0x00000000 => 0xc0000000
++ * 0x01000000 => 0xc1000000
++ * 0x04000000 => 0xc4000000
++ * 0x05000000 => 0xc5000000
++ * 0xe0000000 => 0xc8000000
++ * 0xe1000000 => 0xc9000000
++ * 0xe4000000 => 0xcc000000
++ * 0xe5000000 => 0xcd000000
++ *
++ * As suggested here: http://marc.info/?l=linux-arm&m=122754446724900&w=2
++ *
++ * Note that static inline functions won't work here because
++ * arch/arm/include/asm/memory.h uses "#ifndef __virt_to_phys" to check whether to
++ * use generic functions or not.
++ */
 +
-+static inline unsigned long __virt_to_phys(unsigned long va)
-+{
-+	return (va & 0x07ffffff) | ((va & 0x08000000) ? 0xe0000000 : 0);
-+}
-+#endif
++#define __phys_to_virt(p)   \
++            (((p) & 0x07ffffff) | (((p) & 0xe0000000) ? 0x08000000 : 0) | PAGE_OFFSET)
++
++#define __virt_to_phys(v)   \
++            (((v) & 0x07ffffff) | (((v) & 0x08000000) ? 0xe0000000 : 0 ))
 +
 +#define SECTION_SIZE_BITS 24
 +#define MAX_PHYSMEM_BITS 32
