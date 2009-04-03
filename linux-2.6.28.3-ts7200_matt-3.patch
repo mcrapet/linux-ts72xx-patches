@@ -1,6 +1,6 @@
 diff -Naurp linux-2.6.28.3-orig/arch/arm/Kconfig linux-2.6.28.3/arch/arm/Kconfig
 --- linux-2.6.28.3-orig/arch/arm/Kconfig	2009-02-06 21:44:16.000000000 +0100
-+++ linux-2.6.28.3/arch/arm/Kconfig	2009-03-07 16:12:15.000000000 +0100
++++ linux-2.6.28.3/arch/arm/Kconfig	2009-04-04 21:26:25.000000000 +0200
 @@ -271,6 +271,7 @@ config ARCH_EP93XX
  	bool "EP93xx-based"
  	select ARM_AMBA
@@ -38,7 +38,7 @@ diff -Naurp linux-2.6.28.3-orig/arch/arm/Kconfig linux-2.6.28.3/arch/arm/Kconfig
  	depends on CPU_FREQ && ARCH_PXA && PXA25x
 diff -Naurp linux-2.6.28.3-orig/arch/arm/kernel/head.S linux-2.6.28.3/arch/arm/kernel/head.S
 --- linux-2.6.28.3-orig/arch/arm/kernel/head.S	2009-02-06 21:44:23.000000000 +0100
-+++ linux-2.6.28.3/arch/arm/kernel/head.S	2009-03-07 16:12:15.000000000 +0100
++++ linux-2.6.28.3/arch/arm/kernel/head.S	2009-04-04 21:26:25.000000000 +0200
 @@ -82,6 +82,9 @@ ENTRY(stext)
  	bl	__lookup_processor_type		@ r5=procinfo r9=cpuid
  	movs	r10, r5				@ invalid processor (r5=0)?
@@ -51,7 +51,7 @@ diff -Naurp linux-2.6.28.3-orig/arch/arm/kernel/head.S linux-2.6.28.3/arch/arm/k
  	beq	__error_a			@ yes, error 'a'
 diff -Naurp linux-2.6.28.3-orig/arch/arm/kernel/setup.c linux-2.6.28.3/arch/arm/kernel/setup.c
 --- linux-2.6.28.3-orig/arch/arm/kernel/setup.c	2009-02-06 21:44:23.000000000 +0100
-+++ linux-2.6.28.3/arch/arm/kernel/setup.c	2009-03-07 16:12:15.000000000 +0100
++++ linux-2.6.28.3/arch/arm/kernel/setup.c	2009-04-04 21:26:25.000000000 +0200
 @@ -831,9 +831,17 @@ static int c_show(struct seq_file *m, vo
  	seq_puts(m, "\n");
  
@@ -72,7 +72,7 @@ diff -Naurp linux-2.6.28.3-orig/arch/arm/kernel/setup.c linux-2.6.28.3/arch/arm/
  }
 diff -Naurp linux-2.6.28.3-orig/arch/arm/mach-ep93xx/clock.c linux-2.6.28.3/arch/arm/mach-ep93xx/clock.c
 --- linux-2.6.28.3-orig/arch/arm/mach-ep93xx/clock.c	2009-02-06 21:44:17.000000000 +0100
-+++ linux-2.6.28.3/arch/arm/mach-ep93xx/clock.c	2009-03-07 16:12:15.000000000 +0100
++++ linux-2.6.28.3/arch/arm/mach-ep93xx/clock.c	2009-04-04 21:26:25.000000000 +0200
 @@ -51,7 +51,10 @@ static struct clk clk_usb_host = {
  	.enable_reg	= EP93XX_SYSCON_CLOCK_CONTROL,
  	.enable_mask	= EP93XX_SYSCON_CLOCK_USH_EN,
@@ -95,7 +95,7 @@ diff -Naurp linux-2.6.28.3-orig/arch/arm/mach-ep93xx/clock.c linux-2.6.28.3/arch
  struct clk *clk_get(struct device *dev, const char *id)
 diff -Naurp linux-2.6.28.3-orig/arch/arm/mach-ep93xx/core.c linux-2.6.28.3/arch/arm/mach-ep93xx/core.c
 --- linux-2.6.28.3-orig/arch/arm/mach-ep93xx/core.c	2009-02-06 21:44:17.000000000 +0100
-+++ linux-2.6.28.3/arch/arm/mach-ep93xx/core.c	2009-03-07 16:12:15.000000000 +0100
++++ linux-2.6.28.3/arch/arm/mach-ep93xx/core.c	2009-04-04 21:26:25.000000000 +0200
 @@ -34,11 +34,15 @@
  #include <linux/amba/bus.h>
  #include <linux/amba/serial.h>
@@ -252,7 +252,7 @@ diff -Naurp linux-2.6.28.3-orig/arch/arm/mach-ep93xx/core.c linux-2.6.28.3/arch/
  }
 diff -Naurp linux-2.6.28.3-orig/arch/arm/mach-ep93xx/cpufreq.c linux-2.6.28.3/arch/arm/mach-ep93xx/cpufreq.c
 --- linux-2.6.28.3-orig/arch/arm/mach-ep93xx/cpufreq.c	1970-01-01 01:00:00.000000000 +0100
-+++ linux-2.6.28.3/arch/arm/mach-ep93xx/cpufreq.c	2009-03-07 16:12:15.000000000 +0100
++++ linux-2.6.28.3/arch/arm/mach-ep93xx/cpufreq.c	2009-04-04 21:26:25.000000000 +0200
 @@ -0,0 +1,275 @@
 +/*
 + * cpufreq.c: clock scaling for Cirrus EP93XX embedded chip
@@ -531,7 +531,7 @@ diff -Naurp linux-2.6.28.3-orig/arch/arm/mach-ep93xx/cpufreq.c linux-2.6.28.3/ar
 +MODULE_LICENSE("GPL");
 diff -Naurp linux-2.6.28.3-orig/arch/arm/mach-ep93xx/include/mach/ep93xx-keypad.h linux-2.6.28.3/arch/arm/mach-ep93xx/include/mach/ep93xx-keypad.h
 --- linux-2.6.28.3-orig/arch/arm/mach-ep93xx/include/mach/ep93xx-keypad.h	1970-01-01 01:00:00.000000000 +0100
-+++ linux-2.6.28.3/arch/arm/mach-ep93xx/include/mach/ep93xx-keypad.h	2009-03-07 16:12:15.000000000 +0100
++++ linux-2.6.28.3/arch/arm/mach-ep93xx/include/mach/ep93xx-keypad.h	2009-04-04 21:26:25.000000000 +0200
 @@ -0,0 +1,30 @@
 +/*
 + *  EP93xx "GPIO Port X" input keypad driver
@@ -565,7 +565,7 @@ diff -Naurp linux-2.6.28.3-orig/arch/arm/mach-ep93xx/include/mach/ep93xx-keypad.
 +#endif /* EP93XX_KEYPAD_H */
 diff -Naurp linux-2.6.28.3-orig/arch/arm/mach-ep93xx/include/mach/ep93xx-regs.h linux-2.6.28.3/arch/arm/mach-ep93xx/include/mach/ep93xx-regs.h
 --- linux-2.6.28.3-orig/arch/arm/mach-ep93xx/include/mach/ep93xx-regs.h	2009-02-06 21:44:17.000000000 +0100
-+++ linux-2.6.28.3/arch/arm/mach-ep93xx/include/mach/ep93xx-regs.h	2009-03-07 16:12:15.000000000 +0100
++++ linux-2.6.28.3/arch/arm/mach-ep93xx/include/mach/ep93xx-regs.h	2009-04-04 21:26:25.000000000 +0200
 @@ -104,6 +104,8 @@
  #define EP93XX_I2S_BASE			(EP93XX_APB_VIRT_BASE + 0x00020000)
  
@@ -615,7 +615,7 @@ diff -Naurp linux-2.6.28.3-orig/arch/arm/mach-ep93xx/include/mach/ep93xx-regs.h 
  #define EP93XX_WATCHDOG_BASE		(EP93XX_APB_VIRT_BASE + 0x00140000)
 diff -Naurp linux-2.6.28.3-orig/arch/arm/mach-ep93xx/include/mach/gpio.h linux-2.6.28.3/arch/arm/mach-ep93xx/include/mach/gpio.h
 --- linux-2.6.28.3-orig/arch/arm/mach-ep93xx/include/mach/gpio.h	2009-02-06 21:44:17.000000000 +0100
-+++ linux-2.6.28.3/arch/arm/mach-ep93xx/include/mach/gpio.h	2009-03-07 16:12:15.000000000 +0100
++++ linux-2.6.28.3/arch/arm/mach-ep93xx/include/mach/gpio.h	2009-04-04 21:26:25.000000000 +0200
 @@ -99,6 +99,8 @@
  /* maximum value for irq capable line identifiers */
  #define EP93XX_GPIO_LINE_MAX_IRQ	EP93XX_GPIO_LINE_F(7)
@@ -627,7 +627,7 @@ diff -Naurp linux-2.6.28.3-orig/arch/arm/mach-ep93xx/include/mach/gpio.h linux-2
  #include <asm-generic/gpio.h>
 diff -Naurp linux-2.6.28.3-orig/arch/arm/mach-ep93xx/include/mach/memory.h linux-2.6.28.3/arch/arm/mach-ep93xx/include/mach/memory.h
 --- linux-2.6.28.3-orig/arch/arm/mach-ep93xx/include/mach/memory.h	2009-02-06 21:44:17.000000000 +0100
-+++ linux-2.6.28.3/arch/arm/mach-ep93xx/include/mach/memory.h	2009-03-07 16:12:15.000000000 +0100
++++ linux-2.6.28.3/arch/arm/mach-ep93xx/include/mach/memory.h	2009-04-04 21:26:25.000000000 +0200
 @@ -10,5 +10,32 @@
  #define __bus_to_virt(x)	__phys_to_virt(x)
  #define __virt_to_bus(x)	__virt_to_phys(x)
@@ -663,7 +663,7 @@ diff -Naurp linux-2.6.28.3-orig/arch/arm/mach-ep93xx/include/mach/memory.h linux
  #endif
 diff -Naurp linux-2.6.28.3-orig/arch/arm/mach-ep93xx/include/mach/spi.h linux-2.6.28.3/arch/arm/mach-ep93xx/include/mach/spi.h
 --- linux-2.6.28.3-orig/arch/arm/mach-ep93xx/include/mach/spi.h	1970-01-01 01:00:00.000000000 +0100
-+++ linux-2.6.28.3/arch/arm/mach-ep93xx/include/mach/spi.h	2009-03-07 16:12:15.000000000 +0100
++++ linux-2.6.28.3/arch/arm/mach-ep93xx/include/mach/spi.h	2009-04-04 21:26:25.000000000 +0200
 @@ -0,0 +1,18 @@
 +/*
 + * arch/arm/mach-ep93xx/include/mach/spi.h
@@ -685,7 +685,7 @@ diff -Naurp linux-2.6.28.3-orig/arch/arm/mach-ep93xx/include/mach/spi.h linux-2.
 +#define SPI_CS_INIT      0x4
 diff -Naurp linux-2.6.28.3-orig/arch/arm/mach-ep93xx/include/mach/ts72xx.h linux-2.6.28.3/arch/arm/mach-ep93xx/include/mach/ts72xx.h
 --- linux-2.6.28.3-orig/arch/arm/mach-ep93xx/include/mach/ts72xx.h	2009-02-06 21:44:17.000000000 +0100
-+++ linux-2.6.28.3/arch/arm/mach-ep93xx/include/mach/ts72xx.h	2009-03-07 16:12:15.000000000 +0100
++++ linux-2.6.28.3/arch/arm/mach-ep93xx/include/mach/ts72xx.h	2009-04-04 21:26:25.000000000 +0200
 @@ -8,12 +8,23 @@
   * virt		phys		size
   * febff000	22000000	4K	model number register
@@ -805,7 +805,7 @@ diff -Naurp linux-2.6.28.3-orig/arch/arm/mach-ep93xx/include/mach/ts72xx.h linux
  #endif
 diff -Naurp linux-2.6.28.3-orig/arch/arm/mach-ep93xx/include/mach/uncompress.h linux-2.6.28.3/arch/arm/mach-ep93xx/include/mach/uncompress.h
 --- linux-2.6.28.3-orig/arch/arm/mach-ep93xx/include/mach/uncompress.h	2009-02-06 21:44:17.000000000 +0100
-+++ linux-2.6.28.3/arch/arm/mach-ep93xx/include/mach/uncompress.h	2009-03-07 16:12:15.000000000 +0100
++++ linux-2.6.28.3/arch/arm/mach-ep93xx/include/mach/uncompress.h	2009-04-04 21:26:25.000000000 +0200
 @@ -86,9 +86,74 @@ static void ethernet_reset(void)
  }
  
@@ -883,7 +883,7 @@ diff -Naurp linux-2.6.28.3-orig/arch/arm/mach-ep93xx/include/mach/uncompress.h l
  #define arch_decomp_wdog()
 diff -Naurp linux-2.6.28.3-orig/arch/arm/mach-ep93xx/Kconfig linux-2.6.28.3/arch/arm/mach-ep93xx/Kconfig
 --- linux-2.6.28.3-orig/arch/arm/mach-ep93xx/Kconfig	2009-02-06 21:44:17.000000000 +0100
-+++ linux-2.6.28.3/arch/arm/mach-ep93xx/Kconfig	2009-03-07 16:12:15.000000000 +0100
++++ linux-2.6.28.3/arch/arm/mach-ep93xx/Kconfig	2009-04-04 21:26:25.000000000 +0200
 @@ -7,6 +7,15 @@ config CRUNCH
  	help
  	  Enable kernel support for MaverickCrunch.
@@ -923,7 +923,7 @@ diff -Naurp linux-2.6.28.3-orig/arch/arm/mach-ep93xx/Kconfig linux-2.6.28.3/arch
  endif
 diff -Naurp linux-2.6.28.3-orig/arch/arm/mach-ep93xx/Makefile linux-2.6.28.3/arch/arm/mach-ep93xx/Makefile
 --- linux-2.6.28.3-orig/arch/arm/mach-ep93xx/Makefile	2009-02-06 21:44:17.000000000 +0100
-+++ linux-2.6.28.3/arch/arm/mach-ep93xx/Makefile	2009-03-07 16:12:15.000000000 +0100
++++ linux-2.6.28.3/arch/arm/mach-ep93xx/Makefile	2009-04-04 21:26:25.000000000 +0200
 @@ -6,6 +6,8 @@ obj-m			:=
  obj-n			:=
  obj-			:=
@@ -943,7 +943,7 @@ diff -Naurp linux-2.6.28.3-orig/arch/arm/mach-ep93xx/Makefile linux-2.6.28.3/arc
 +obj-$(CONFIG_PM) += pm.o
 diff -Naurp linux-2.6.28.3-orig/arch/arm/mach-ep93xx/pm.c linux-2.6.28.3/arch/arm/mach-ep93xx/pm.c
 --- linux-2.6.28.3-orig/arch/arm/mach-ep93xx/pm.c	1970-01-01 01:00:00.000000000 +0100
-+++ linux-2.6.28.3/arch/arm/mach-ep93xx/pm.c	2009-03-07 16:12:15.000000000 +0100
++++ linux-2.6.28.3/arch/arm/mach-ep93xx/pm.c	2009-04-04 21:26:25.000000000 +0200
 @@ -0,0 +1,77 @@
 +/*
 + *  arch/arm/mach-ep93xx/pm.c
@@ -1024,7 +1024,7 @@ diff -Naurp linux-2.6.28.3-orig/arch/arm/mach-ep93xx/pm.c linux-2.6.28.3/arch/ar
 +__initcall(ep93xx_pm_init);
 diff -Naurp linux-2.6.28.3-orig/arch/arm/mach-ep93xx/ts72xx.c linux-2.6.28.3/arch/arm/mach-ep93xx/ts72xx.c
 --- linux-2.6.28.3-orig/arch/arm/mach-ep93xx/ts72xx.c	2009-02-06 21:44:17.000000000 +0100
-+++ linux-2.6.28.3/arch/arm/mach-ep93xx/ts72xx.c	2009-03-07 16:12:15.000000000 +0100
++++ linux-2.6.28.3/arch/arm/mach-ep93xx/ts72xx.c	2009-04-04 21:26:25.000000000 +0200
 @@ -19,8 +19,11 @@
  #include <linux/mtd/physmap.h>
  #include <linux/platform_device.h>
@@ -1228,7 +1228,7 @@ diff -Naurp linux-2.6.28.3-orig/arch/arm/mach-ep93xx/ts72xx.c linux-2.6.28.3/arc
  }
 diff -Naurp linux-2.6.28.3-orig/arch/arm/mach-ep93xx/ts72xx_sbcinfo.c linux-2.6.28.3/arch/arm/mach-ep93xx/ts72xx_sbcinfo.c
 --- linux-2.6.28.3-orig/arch/arm/mach-ep93xx/ts72xx_sbcinfo.c	1970-01-01 01:00:00.000000000 +0100
-+++ linux-2.6.28.3/arch/arm/mach-ep93xx/ts72xx_sbcinfo.c	2009-03-07 16:12:15.000000000 +0100
++++ linux-2.6.28.3/arch/arm/mach-ep93xx/ts72xx_sbcinfo.c	2009-04-04 21:26:25.000000000 +0200
 @@ -0,0 +1,147 @@
 +/*
 + *  Technologic Systems TS-72XX sbc /proc/driver/sbcinfo entry.
@@ -1379,7 +1379,7 @@ diff -Naurp linux-2.6.28.3-orig/arch/arm/mach-ep93xx/ts72xx_sbcinfo.c linux-2.6.
 +MODULE_VERSION("1.0");
 diff -Naurp linux-2.6.28.3-orig/arch/arm/mm/proc-arm920.S linux-2.6.28.3/arch/arm/mm/proc-arm920.S
 --- linux-2.6.28.3-orig/arch/arm/mm/proc-arm920.S	2009-02-06 21:44:16.000000000 +0100
-+++ linux-2.6.28.3/arch/arm/mm/proc-arm920.S	2009-03-07 16:12:15.000000000 +0100
++++ linux-2.6.28.3/arch/arm/mm/proc-arm920.S	2009-04-04 21:26:25.000000000 +0200
 @@ -198,7 +198,7 @@ ENTRY(arm920_coherent_kern_range)
   */
  ENTRY(arm920_coherent_user_range)
@@ -1401,7 +1401,7 @@ diff -Naurp linux-2.6.28.3-orig/arch/arm/mm/proc-arm920.S linux-2.6.28.3/arch/ar
  
 diff -Naurp linux-2.6.28.3-orig/drivers/ata/Kconfig linux-2.6.28.3/drivers/ata/Kconfig
 --- linux-2.6.28.3-orig/drivers/ata/Kconfig	2009-02-06 21:44:14.000000000 +0100
-+++ linux-2.6.28.3/drivers/ata/Kconfig	2009-03-07 16:12:15.000000000 +0100
++++ linux-2.6.28.3/drivers/ata/Kconfig	2009-04-04 21:26:25.000000000 +0200
 @@ -724,5 +724,25 @@ config PATA_BF54X
  
  	  If unsure, say N.
@@ -1430,7 +1430,7 @@ diff -Naurp linux-2.6.28.3-orig/drivers/ata/Kconfig linux-2.6.28.3/drivers/ata/K
  endif # ATA
 diff -Naurp linux-2.6.28.3-orig/drivers/ata/Makefile linux-2.6.28.3/drivers/ata/Makefile
 --- linux-2.6.28.3-orig/drivers/ata/Makefile	2009-02-06 21:44:14.000000000 +0100
-+++ linux-2.6.28.3/drivers/ata/Makefile	2009-03-07 16:12:15.000000000 +0100
++++ linux-2.6.28.3/drivers/ata/Makefile	2009-04-04 21:26:25.000000000 +0200
 @@ -72,6 +72,9 @@ obj-$(CONFIG_PATA_BF54X)	+= pata_bf54x.o
  obj-$(CONFIG_PATA_PLATFORM)	+= pata_platform.o
  obj-$(CONFIG_PATA_OF_PLATFORM)	+= pata_of_platform.o
@@ -1443,7 +1443,7 @@ diff -Naurp linux-2.6.28.3-orig/drivers/ata/Makefile linux-2.6.28.3/drivers/ata/
  # Should be last but one libata driver
 diff -Naurp linux-2.6.28.3-orig/drivers/ata/pata_ts7200_cf.c linux-2.6.28.3/drivers/ata/pata_ts7200_cf.c
 --- linux-2.6.28.3-orig/drivers/ata/pata_ts7200_cf.c	1970-01-01 01:00:00.000000000 +0100
-+++ linux-2.6.28.3/drivers/ata/pata_ts7200_cf.c	2009-03-07 16:12:15.000000000 +0100
++++ linux-2.6.28.3/drivers/ata/pata_ts7200_cf.c	2009-04-04 21:26:25.000000000 +0200
 @@ -0,0 +1,85 @@
 +/*
 + *  Technologic Systems TS-7200 Compact Flash PATA device driver.
@@ -1532,7 +1532,7 @@ diff -Naurp linux-2.6.28.3-orig/drivers/ata/pata_ts7200_cf.c linux-2.6.28.3/driv
 +MODULE_VERSION(DRV_VERSION);
 diff -Naurp linux-2.6.28.3-orig/drivers/ata/pata_ts72xx.c linux-2.6.28.3/drivers/ata/pata_ts72xx.c
 --- linux-2.6.28.3-orig/drivers/ata/pata_ts72xx.c	1970-01-01 01:00:00.000000000 +0100
-+++ linux-2.6.28.3/drivers/ata/pata_ts72xx.c	2009-03-07 16:12:15.000000000 +0100
++++ linux-2.6.28.3/drivers/ata/pata_ts72xx.c	2009-04-04 21:26:25.000000000 +0200
 @@ -0,0 +1,155 @@
 +/*
 + *  TS-72XX PATA driver for Technologic Systems boards.
@@ -1691,7 +1691,7 @@ diff -Naurp linux-2.6.28.3-orig/drivers/ata/pata_ts72xx.c linux-2.6.28.3/drivers
 +module_exit(ts72xx_pata_exit);
 diff -Naurp linux-2.6.28.3-orig/drivers/ata/pata_ts9600.c linux-2.6.28.3/drivers/ata/pata_ts9600.c
 --- linux-2.6.28.3-orig/drivers/ata/pata_ts9600.c	1970-01-01 01:00:00.000000000 +0100
-+++ linux-2.6.28.3/drivers/ata/pata_ts9600.c	2009-03-07 16:12:15.000000000 +0100
++++ linux-2.6.28.3/drivers/ata/pata_ts9600.c	2009-04-04 21:26:25.000000000 +0200
 @@ -0,0 +1,88 @@
 +/*
 + *  Technologic Systems TS-9600 PATA device driver.
@@ -1783,7 +1783,7 @@ diff -Naurp linux-2.6.28.3-orig/drivers/ata/pata_ts9600.c linux-2.6.28.3/drivers
 +MODULE_VERSION(DRV_VERSION);
 diff -Naurp linux-2.6.28.3-orig/drivers/ide/ide_ts7200_cf.c linux-2.6.28.3/drivers/ide/ide_ts7200_cf.c
 --- linux-2.6.28.3-orig/drivers/ide/ide_ts7200_cf.c	1970-01-01 01:00:00.000000000 +0100
-+++ linux-2.6.28.3/drivers/ide/ide_ts7200_cf.c	2009-03-07 16:12:15.000000000 +0100
++++ linux-2.6.28.3/drivers/ide/ide_ts7200_cf.c	2009-04-04 21:26:25.000000000 +0200
 @@ -0,0 +1,59 @@
 +/*
 + *  Technologic Systems TS-7200 Compact Flash IDE device driver.
@@ -1846,7 +1846,7 @@ diff -Naurp linux-2.6.28.3-orig/drivers/ide/ide_ts7200_cf.c linux-2.6.28.3/drive
 +MODULE_VERSION("0.1");
 diff -Naurp linux-2.6.28.3-orig/drivers/ide/Kconfig linux-2.6.28.3/drivers/ide/Kconfig
 --- linux-2.6.28.3-orig/drivers/ide/Kconfig	2009-02-06 21:44:14.000000000 +0100
-+++ linux-2.6.28.3/drivers/ide/Kconfig	2009-03-07 16:12:15.000000000 +0100
++++ linux-2.6.28.3/drivers/ide/Kconfig	2009-04-04 21:26:25.000000000 +0200
 @@ -727,6 +727,13 @@ config IDE_ARM
  	depends on ARM && (ARCH_CLPS7500 || ARCH_RPC || ARCH_SHARK)
  	default y
@@ -1863,7 +1863,7 @@ diff -Naurp linux-2.6.28.3-orig/drivers/ide/Kconfig linux-2.6.28.3/drivers/ide/K
  	depends on ARM && ARCH_ACORN
 diff -Naurp linux-2.6.28.3-orig/drivers/ide/Makefile linux-2.6.28.3/drivers/ide/Makefile
 --- linux-2.6.28.3-orig/drivers/ide/Makefile	2009-02-06 21:44:14.000000000 +0100
-+++ linux-2.6.28.3/drivers/ide/Makefile	2009-03-07 16:12:15.000000000 +0100
++++ linux-2.6.28.3/drivers/ide/Makefile	2009-04-04 21:26:25.000000000 +0200
 @@ -108,6 +108,7 @@ obj-$(CONFIG_BLK_DEV_PLATFORM)		+= ide_p
  obj-$(CONFIG_BLK_DEV_IDE_ICSIDE)	+= icside.o
  obj-$(CONFIG_BLK_DEV_IDE_RAPIDE)	+= rapide.o
@@ -1874,7 +1874,7 @@ diff -Naurp linux-2.6.28.3-orig/drivers/ide/Makefile linux-2.6.28.3/drivers/ide/
  
 diff -Naurp linux-2.6.28.3-orig/drivers/input/keyboard/ep93xx-keypad.c linux-2.6.28.3/drivers/input/keyboard/ep93xx-keypad.c
 --- linux-2.6.28.3-orig/drivers/input/keyboard/ep93xx-keypad.c	1970-01-01 01:00:00.000000000 +0100
-+++ linux-2.6.28.3/drivers/input/keyboard/ep93xx-keypad.c	2009-03-07 16:12:15.000000000 +0100
++++ linux-2.6.28.3/drivers/input/keyboard/ep93xx-keypad.c	2009-04-04 21:26:25.000000000 +0200
 @@ -0,0 +1,291 @@
 +/*
 + *  EP93xx "GPIO Port B" input keypad driver
@@ -2169,7 +2169,7 @@ diff -Naurp linux-2.6.28.3-orig/drivers/input/keyboard/ep93xx-keypad.c linux-2.6
 +MODULE_VERSION(DRV_VERSION);
 diff -Naurp linux-2.6.28.3-orig/drivers/input/keyboard/Kconfig linux-2.6.28.3/drivers/input/keyboard/Kconfig
 --- linux-2.6.28.3-orig/drivers/input/keyboard/Kconfig	2009-02-06 21:44:13.000000000 +0100
-+++ linux-2.6.28.3/drivers/input/keyboard/Kconfig	2009-03-07 16:12:15.000000000 +0100
++++ linux-2.6.28.3/drivers/input/keyboard/Kconfig	2009-04-04 21:26:25.000000000 +0200
 @@ -323,4 +323,47 @@ config KEYBOARD_SH_KEYSC
  
  	  To compile this driver as a module, choose M here: the
@@ -2220,7 +2220,7 @@ diff -Naurp linux-2.6.28.3-orig/drivers/input/keyboard/Kconfig linux-2.6.28.3/dr
  endif
 diff -Naurp linux-2.6.28.3-orig/drivers/input/keyboard/Makefile linux-2.6.28.3/drivers/input/keyboard/Makefile
 --- linux-2.6.28.3-orig/drivers/input/keyboard/Makefile	2009-02-06 21:44:13.000000000 +0100
-+++ linux-2.6.28.3/drivers/input/keyboard/Makefile	2009-03-07 16:12:15.000000000 +0100
++++ linux-2.6.28.3/drivers/input/keyboard/Makefile	2009-04-04 21:26:25.000000000 +0200
 @@ -27,3 +27,7 @@ obj-$(CONFIG_KEYBOARD_HP7XX)		+= jornada
  obj-$(CONFIG_KEYBOARD_MAPLE)		+= maple_keyb.o
  obj-$(CONFIG_KEYBOARD_BFIN)		+= bf54x-keys.o
@@ -2231,7 +2231,7 @@ diff -Naurp linux-2.6.28.3-orig/drivers/input/keyboard/Makefile linux-2.6.28.3/d
 +obj-$(CONFIG_TS72XX_DIO_4X4_KEYPAD)		+= ts72xx_dio_4x4.o
 diff -Naurp linux-2.6.28.3-orig/drivers/input/keyboard/ts72xx_dio_3x4.c linux-2.6.28.3/drivers/input/keyboard/ts72xx_dio_3x4.c
 --- linux-2.6.28.3-orig/drivers/input/keyboard/ts72xx_dio_3x4.c	1970-01-01 01:00:00.000000000 +0100
-+++ linux-2.6.28.3/drivers/input/keyboard/ts72xx_dio_3x4.c	2009-03-07 16:12:15.000000000 +0100
++++ linux-2.6.28.3/drivers/input/keyboard/ts72xx_dio_3x4.c	2009-04-04 21:26:25.000000000 +0200
 @@ -0,0 +1,65 @@
 +/*
 + *  TS-72xx keypad device driver for DIO1 header (DIO_0 thru DIO_7 are using port B)
@@ -2300,7 +2300,7 @@ diff -Naurp linux-2.6.28.3-orig/drivers/input/keyboard/ts72xx_dio_3x4.c linux-2.
 +MODULE_LICENSE("GPL");
 diff -Naurp linux-2.6.28.3-orig/drivers/input/keyboard/ts72xx_dio_4x4.c linux-2.6.28.3/drivers/input/keyboard/ts72xx_dio_4x4.c
 --- linux-2.6.28.3-orig/drivers/input/keyboard/ts72xx_dio_4x4.c	1970-01-01 01:00:00.000000000 +0100
-+++ linux-2.6.28.3/drivers/input/keyboard/ts72xx_dio_4x4.c	2009-03-07 16:12:15.000000000 +0100
++++ linux-2.6.28.3/drivers/input/keyboard/ts72xx_dio_4x4.c	2009-04-04 21:26:25.000000000 +0200
 @@ -0,0 +1,65 @@
 +/*
 + *  TS-72xx keypad device driver for DIO1 header (DIO_0 thru DIO_7 are using port B)
@@ -2369,7 +2369,7 @@ diff -Naurp linux-2.6.28.3-orig/drivers/input/keyboard/ts72xx_dio_4x4.c linux-2.
 +MODULE_LICENSE("GPL");
 diff -Naurp linux-2.6.28.3-orig/drivers/misc/Kconfig linux-2.6.28.3/drivers/misc/Kconfig
 --- linux-2.6.28.3-orig/drivers/misc/Kconfig	2009-02-06 21:44:14.000000000 +0100
-+++ linux-2.6.28.3/drivers/misc/Kconfig	2009-03-07 16:12:15.000000000 +0100
++++ linux-2.6.28.3/drivers/misc/Kconfig	2009-04-04 21:26:25.000000000 +0200
 @@ -500,4 +500,25 @@ config SGI_GRU_DEBUG
  
  source "drivers/misc/c2port/Kconfig"
@@ -2398,7 +2398,7 @@ diff -Naurp linux-2.6.28.3-orig/drivers/misc/Kconfig linux-2.6.28.3/drivers/misc
  endif # MISC_DEVICES
 diff -Naurp linux-2.6.28.3-orig/drivers/misc/Makefile linux-2.6.28.3/drivers/misc/Makefile
 --- linux-2.6.28.3-orig/drivers/misc/Makefile	2009-02-06 21:44:14.000000000 +0100
-+++ linux-2.6.28.3/drivers/misc/Makefile	2009-03-07 16:12:15.000000000 +0100
++++ linux-2.6.28.3/drivers/misc/Makefile	2009-04-04 21:26:25.000000000 +0200
 @@ -32,4 +32,5 @@ obj-$(CONFIG_KGDB_TESTS)	+= kgdbts.o
  obj-$(CONFIG_SGI_XP)		+= sgi-xp/
  obj-$(CONFIG_SGI_GRU)		+= sgi-gru/
@@ -2407,7 +2407,7 @@ diff -Naurp linux-2.6.28.3-orig/drivers/misc/Makefile linux-2.6.28.3/drivers/mis
  obj-$(CONFIG_C2PORT)		+= c2port/
 diff -Naurp linux-2.6.28.3-orig/drivers/misc/ts72xx_max197.c linux-2.6.28.3/drivers/misc/ts72xx_max197.c
 --- linux-2.6.28.3-orig/drivers/misc/ts72xx_max197.c	1970-01-01 01:00:00.000000000 +0100
-+++ linux-2.6.28.3/drivers/misc/ts72xx_max197.c	2009-03-07 16:12:15.000000000 +0100
++++ linux-2.6.28.3/drivers/misc/ts72xx_max197.c	2009-04-04 21:26:25.000000000 +0200
 @@ -0,0 +1,235 @@
 +/*
 + *  TS-72XX max197 driver for Technologic Systems boards.
@@ -2646,7 +2646,7 @@ diff -Naurp linux-2.6.28.3-orig/drivers/misc/ts72xx_max197.c linux-2.6.28.3/driv
 +module_exit(ts72xx_max197_exit);
 diff -Naurp linux-2.6.28.3-orig/drivers/mtd/maps/Kconfig linux-2.6.28.3/drivers/mtd/maps/Kconfig
 --- linux-2.6.28.3-orig/drivers/mtd/maps/Kconfig	2009-02-06 21:44:13.000000000 +0100
-+++ linux-2.6.28.3/drivers/mtd/maps/Kconfig	2009-03-07 16:12:15.000000000 +0100
++++ linux-2.6.28.3/drivers/mtd/maps/Kconfig	2009-04-04 21:26:25.000000000 +0200
 @@ -450,6 +450,14 @@ config MTD_OMAP_NOR
  	  These boards include the Innovator, H2, H3, OSK, Perseus2, and
  	  more.  If you have such a board, say 'Y'.
@@ -2664,7 +2664,7 @@ diff -Naurp linux-2.6.28.3-orig/drivers/mtd/maps/Kconfig linux-2.6.28.3/drivers/
  	tristate "PCI MTD driver"
 diff -Naurp linux-2.6.28.3-orig/drivers/mtd/maps/Makefile linux-2.6.28.3/drivers/mtd/maps/Makefile
 --- linux-2.6.28.3-orig/drivers/mtd/maps/Makefile	2009-02-06 21:44:13.000000000 +0100
-+++ linux-2.6.28.3/drivers/mtd/maps/Makefile	2009-03-07 16:12:15.000000000 +0100
++++ linux-2.6.28.3/drivers/mtd/maps/Makefile	2009-04-04 21:26:25.000000000 +0200
 @@ -61,3 +61,5 @@ obj-$(CONFIG_MTD_PLATRAM)	+= plat-ram.o
  obj-$(CONFIG_MTD_OMAP_NOR)	+= omap_nor.o
  obj-$(CONFIG_MTD_INTEL_VR_NOR)	+= intel_vr_nor.o
@@ -2673,8 +2673,8 @@ diff -Naurp linux-2.6.28.3-orig/drivers/mtd/maps/Makefile linux-2.6.28.3/drivers
 +
 diff -Naurp linux-2.6.28.3-orig/drivers/mtd/maps/ts7200_flash.c linux-2.6.28.3/drivers/mtd/maps/ts7200_flash.c
 --- linux-2.6.28.3-orig/drivers/mtd/maps/ts7200_flash.c	1970-01-01 01:00:00.000000000 +0100
-+++ linux-2.6.28.3/drivers/mtd/maps/ts7200_flash.c	2009-03-07 16:12:15.000000000 +0100
-@@ -0,0 +1,109 @@
++++ linux-2.6.28.3/drivers/mtd/maps/ts7200_flash.c	2009-04-04 21:26:25.000000000 +0200
+@@ -0,0 +1,106 @@
 +/*
 + * ts7200_flash.c - mapping for TS-7200 SBCs (8mb NOR flash)
 + * No platform_device resource is used here. All is hardcoded.
@@ -2697,9 +2697,6 @@ diff -Naurp linux-2.6.28.3-orig/drivers/mtd/maps/ts7200_flash.c linux-2.6.28.3/d
 +#include <linux/mtd/mtd.h>
 +#include <linux/mtd/map.h>
 +#include <linux/mtd/partitions.h>
-+
-+#define STRINGIFY(x) #x
-+#define TOSTRING(x) STRINGIFY(x)
 +
 +#define WINDOW_ADDR          0x60000000
 +#define WINDOW_SIZE          SZ_8M
@@ -2783,10 +2780,10 @@ diff -Naurp linux-2.6.28.3-orig/drivers/mtd/maps/ts7200_flash.c linux-2.6.28.3/d
 +
 +MODULE_LICENSE("GPL");
 +MODULE_AUTHOR("Matthieu Crapet <mcrapet@gmail.com>");
-+MODULE_DESCRIPTION("MTD map driver for TS-7200 board (" TOSTRING(WINDOW_READABLE_SIZE) "MB flash version)");
++MODULE_DESCRIPTION("MTD map driver for TS-7200 board (" __MODULE_STRING(WINDOW_READABLE_SIZE) "MB flash version)");
 diff -Naurp linux-2.6.28.3-orig/drivers/net/arm/ep93xx_eth.c linux-2.6.28.3/drivers/net/arm/ep93xx_eth.c
 --- linux-2.6.28.3-orig/drivers/net/arm/ep93xx_eth.c	2009-02-06 21:44:13.000000000 +0100
-+++ linux-2.6.28.3/drivers/net/arm/ep93xx_eth.c	2009-03-07 16:12:15.000000000 +0100
++++ linux-2.6.28.3/drivers/net/arm/ep93xx_eth.c	2009-04-04 21:26:25.000000000 +0200
 @@ -2,6 +2,7 @@
   * EP93xx ethernet network device driver
   * Copyright (C) 2006 Lennert Buytenhek <buytenh@wantstofly.org>
@@ -3314,7 +3311,7 @@ diff -Naurp linux-2.6.28.3-orig/drivers/net/arm/ep93xx_eth.c linux-2.6.28.3/driv
  
 diff -Naurp linux-2.6.28.3-orig/drivers/net/arm/Kconfig linux-2.6.28.3/drivers/net/arm/Kconfig
 --- linux-2.6.28.3-orig/drivers/net/arm/Kconfig	2009-02-06 21:44:13.000000000 +0100
-+++ linux-2.6.28.3/drivers/net/arm/Kconfig	2009-03-07 16:12:15.000000000 +0100
++++ linux-2.6.28.3/drivers/net/arm/Kconfig	2009-04-04 21:26:25.000000000 +0200
 @@ -44,6 +44,7 @@ config EP93XX_ETH
  	tristate "EP93xx Ethernet support"
  	depends on ARM && ARCH_EP93XX
@@ -3325,7 +3322,7 @@ diff -Naurp linux-2.6.28.3-orig/drivers/net/arm/Kconfig linux-2.6.28.3/drivers/n
  	  Say Y if you are building a kernel for EP93xx based devices.
 diff -Naurp linux-2.6.28.3-orig/drivers/net/ax88796.c linux-2.6.28.3/drivers/net/ax88796.c
 --- linux-2.6.28.3-orig/drivers/net/ax88796.c	2009-02-06 21:44:13.000000000 +0100
-+++ linux-2.6.28.3/drivers/net/ax88796.c	2009-03-07 16:12:15.000000000 +0100
++++ linux-2.6.28.3/drivers/net/ax88796.c	2009-04-04 21:26:25.000000000 +0200
 @@ -911,7 +911,11 @@ static int ax_probe(struct platform_devi
  			goto exit_mem2;
  		}
@@ -3340,7 +3337,7 @@ diff -Naurp linux-2.6.28.3-orig/drivers/net/ax88796.c linux-2.6.28.3/drivers/net
  	/* got resources, now initialise and register device */
 diff -Naurp linux-2.6.28.3-orig/drivers/net/ax88796_ts_eth100.c linux-2.6.28.3/drivers/net/ax88796_ts_eth100.c
 --- linux-2.6.28.3-orig/drivers/net/ax88796_ts_eth100.c	1970-01-01 01:00:00.000000000 +0100
-+++ linux-2.6.28.3/drivers/net/ax88796_ts_eth100.c	2009-03-07 16:12:15.000000000 +0100
++++ linux-2.6.28.3/drivers/net/ax88796_ts_eth100.c	2009-04-04 21:26:25.000000000 +0200
 @@ -0,0 +1,184 @@
 +/*
 + *  linux/drivers/net/ax88796_ts_eth100.c
@@ -3528,7 +3525,7 @@ diff -Naurp linux-2.6.28.3-orig/drivers/net/ax88796_ts_eth100.c linux-2.6.28.3/d
 +MODULE_VERSION("0.2");
 diff -Naurp linux-2.6.28.3-orig/drivers/net/Kconfig linux-2.6.28.3/drivers/net/Kconfig
 --- linux-2.6.28.3-orig/drivers/net/Kconfig	2009-02-06 21:44:13.000000000 +0100
-+++ linux-2.6.28.3/drivers/net/Kconfig	2009-03-07 16:12:15.000000000 +0100
++++ linux-2.6.28.3/drivers/net/Kconfig	2009-04-04 21:26:25.000000000 +0200
 @@ -236,6 +236,16 @@ config AX88796_93CX6
  	help
  	  Select this if your platform comes with an external 93CX6 eeprom.
@@ -3548,7 +3545,7 @@ diff -Naurp linux-2.6.28.3-orig/drivers/net/Kconfig linux-2.6.28.3/drivers/net/K
  	depends on PPC_PMAC && PPC32
 diff -Naurp linux-2.6.28.3-orig/drivers/net/Makefile linux-2.6.28.3/drivers/net/Makefile
 --- linux-2.6.28.3-orig/drivers/net/Makefile	2009-02-06 21:44:13.000000000 +0100
-+++ linux-2.6.28.3/drivers/net/Makefile	2009-03-07 16:12:15.000000000 +0100
++++ linux-2.6.28.3/drivers/net/Makefile	2009-04-04 21:26:25.000000000 +0200
 @@ -127,6 +127,7 @@ obj-$(CONFIG_B44) += b44.o
  obj-$(CONFIG_FORCEDETH) += forcedeth.o
  obj-$(CONFIG_NE_H8300) += ne-h8300.o
@@ -3559,7 +3556,7 @@ diff -Naurp linux-2.6.28.3-orig/drivers/net/Makefile linux-2.6.28.3/drivers/net/
  obj-$(CONFIG_MV643XX_ETH) += mv643xx_eth.o
 diff -Naurp linux-2.6.28.3-orig/drivers/serial/8250_ts_ser1.c linux-2.6.28.3/drivers/serial/8250_ts_ser1.c
 --- linux-2.6.28.3-orig/drivers/serial/8250_ts_ser1.c	1970-01-01 01:00:00.000000000 +0100
-+++ linux-2.6.28.3/drivers/serial/8250_ts_ser1.c	2009-03-07 16:12:15.000000000 +0100
++++ linux-2.6.28.3/drivers/serial/8250_ts_ser1.c	2009-04-04 21:26:25.000000000 +0200
 @@ -0,0 +1,148 @@
 +/*
 + *  linux/drivers/serial/8250_ts_ser1.c
@@ -3711,7 +3708,7 @@ diff -Naurp linux-2.6.28.3-orig/drivers/serial/8250_ts_ser1.c linux-2.6.28.3/dri
 +MODULE_VERSION("0.3");
 diff -Naurp linux-2.6.28.3-orig/drivers/serial/Kconfig linux-2.6.28.3/drivers/serial/Kconfig
 --- linux-2.6.28.3-orig/drivers/serial/Kconfig	2009-02-06 21:44:14.000000000 +0100
-+++ linux-2.6.28.3/drivers/serial/Kconfig	2009-03-07 16:12:15.000000000 +0100
++++ linux-2.6.28.3/drivers/serial/Kconfig	2009-04-04 21:26:25.000000000 +0200
 @@ -275,6 +275,23 @@ config SERIAL_8250_RM9K
  	  port hardware found on MIPS RM9122 and similar processors.
  	  If unsure, say N.
@@ -3738,7 +3735,7 @@ diff -Naurp linux-2.6.28.3-orig/drivers/serial/Kconfig linux-2.6.28.3/drivers/se
  config SERIAL_AMBA_PL010
 diff -Naurp linux-2.6.28.3-orig/drivers/serial/Makefile linux-2.6.28.3/drivers/serial/Makefile
 --- linux-2.6.28.3-orig/drivers/serial/Makefile	2009-02-06 21:44:14.000000000 +0100
-+++ linux-2.6.28.3/drivers/serial/Makefile	2009-03-07 16:12:15.000000000 +0100
++++ linux-2.6.28.3/drivers/serial/Makefile	2009-04-04 21:26:25.000000000 +0200
 @@ -28,6 +28,7 @@ obj-$(CONFIG_SERIAL_8250_BOCA) += 8250_b
  obj-$(CONFIG_SERIAL_8250_EXAR_ST16C554) += 8250_exar_st16c554.o
  obj-$(CONFIG_SERIAL_8250_HUB6) += 8250_hub6.o
@@ -3749,7 +3746,7 @@ diff -Naurp linux-2.6.28.3-orig/drivers/serial/Makefile linux-2.6.28.3/drivers/s
  obj-$(CONFIG_SERIAL_CLPS711X) += clps711x.o
 diff -Naurp linux-2.6.28.3-orig/drivers/spi/Kconfig linux-2.6.28.3/drivers/spi/Kconfig
 --- linux-2.6.28.3-orig/drivers/spi/Kconfig	2009-02-06 21:44:14.000000000 +0100
-+++ linux-2.6.28.3/drivers/spi/Kconfig	2009-03-07 16:12:15.000000000 +0100
++++ linux-2.6.28.3/drivers/spi/Kconfig	2009-04-04 21:26:25.000000000 +0200
 @@ -204,6 +204,12 @@ config SPI_XILINX
  	  See the "OPB Serial Peripheral Interface (SPI) (v1.00e)"
  	  Product Specification document (DS464) for hardware details.
@@ -3779,7 +3776,7 @@ diff -Naurp linux-2.6.28.3-orig/drivers/spi/Kconfig linux-2.6.28.3/drivers/spi/K
  #
 diff -Naurp linux-2.6.28.3-orig/drivers/spi/Makefile linux-2.6.28.3/drivers/spi/Makefile
 --- linux-2.6.28.3-orig/drivers/spi/Makefile	2009-02-06 21:44:14.000000000 +0100
-+++ linux-2.6.28.3/drivers/spi/Makefile	2009-03-07 16:12:15.000000000 +0100
++++ linux-2.6.28.3/drivers/spi/Makefile	2009-04-04 21:26:25.000000000 +0200
 @@ -28,6 +28,7 @@ obj-$(CONFIG_SPI_S3C24XX_GPIO)		+= spi_s
  obj-$(CONFIG_SPI_S3C24XX)		+= spi_s3c24xx.o
  obj-$(CONFIG_SPI_TXX9)			+= spi_txx9.o
@@ -3798,7 +3795,7 @@ diff -Naurp linux-2.6.28.3-orig/drivers/spi/Makefile linux-2.6.28.3/drivers/spi/
  # SPI slave controller drivers (upstream link)
 diff -Naurp linux-2.6.28.3-orig/drivers/spi/spi_ep93xx.c linux-2.6.28.3/drivers/spi/spi_ep93xx.c
 --- linux-2.6.28.3-orig/drivers/spi/spi_ep93xx.c	1970-01-01 01:00:00.000000000 +0100
-+++ linux-2.6.28.3/drivers/spi/spi_ep93xx.c	2009-03-07 16:12:15.000000000 +0100
++++ linux-2.6.28.3/drivers/spi/spi_ep93xx.c	2009-04-04 21:26:25.000000000 +0200
 @@ -0,0 +1,496 @@
 +/*
 + *  EP93xx SPI driver
@@ -4298,7 +4295,7 @@ diff -Naurp linux-2.6.28.3-orig/drivers/spi/spi_ep93xx.c linux-2.6.28.3/drivers/
 +MODULE_VERSION("0.21");
 diff -Naurp linux-2.6.28.3-orig/drivers/spi/spi_ep93xx.h linux-2.6.28.3/drivers/spi/spi_ep93xx.h
 --- linux-2.6.28.3-orig/drivers/spi/spi_ep93xx.h	1970-01-01 01:00:00.000000000 +0100
-+++ linux-2.6.28.3/drivers/spi/spi_ep93xx.h	2009-03-07 16:12:15.000000000 +0100
++++ linux-2.6.28.3/drivers/spi/spi_ep93xx.h	2009-04-04 21:26:25.000000000 +0200
 @@ -0,0 +1,61 @@
 +/*
 + *  EP93xx SPI (simple) include
@@ -4363,7 +4360,7 @@ diff -Naurp linux-2.6.28.3-orig/drivers/spi/spi_ep93xx.h linux-2.6.28.3/drivers/
 +#define SPI_DEFAULT_DIVISOR 254
 diff -Naurp linux-2.6.28.3-orig/drivers/spi/tmp124.c linux-2.6.28.3/drivers/spi/tmp124.c
 --- linux-2.6.28.3-orig/drivers/spi/tmp124.c	1970-01-01 01:00:00.000000000 +0100
-+++ linux-2.6.28.3/drivers/spi/tmp124.c	2009-03-07 16:12:15.000000000 +0100
++++ linux-2.6.28.3/drivers/spi/tmp124.c	2009-04-04 21:26:25.000000000 +0200
 @@ -0,0 +1,158 @@
 +/*
 + *  TMP124 SPI protocol driver
@@ -4525,7 +4522,7 @@ diff -Naurp linux-2.6.28.3-orig/drivers/spi/tmp124.c linux-2.6.28.3/drivers/spi/
 +MODULE_VERSION("0.1");
 diff -Naurp linux-2.6.28.3-orig/drivers/video/console/Kconfig linux-2.6.28.3/drivers/video/console/Kconfig
 --- linux-2.6.28.3-orig/drivers/video/console/Kconfig	2009-02-06 21:44:13.000000000 +0100
-+++ linux-2.6.28.3/drivers/video/console/Kconfig	2009-03-07 16:12:15.000000000 +0100
++++ linux-2.6.28.3/drivers/video/console/Kconfig	2009-04-04 21:26:25.000000000 +0200
 @@ -95,6 +95,27 @@ config DUMMY_CONSOLE_ROWS
            The default value is 64, which should fit a 1280x1024 monitor.
            Select 25 if you use a 640x480 resolution by default.
@@ -4556,7 +4553,7 @@ diff -Naurp linux-2.6.28.3-orig/drivers/video/console/Kconfig linux-2.6.28.3/dri
  	depends on FB
 diff -Naurp linux-2.6.28.3-orig/drivers/video/console/Makefile linux-2.6.28.3/drivers/video/console/Makefile
 --- linux-2.6.28.3-orig/drivers/video/console/Makefile	2009-02-06 21:44:13.000000000 +0100
-+++ linux-2.6.28.3/drivers/video/console/Makefile	2009-03-07 16:12:15.000000000 +0100
++++ linux-2.6.28.3/drivers/video/console/Makefile	2009-04-04 21:26:25.000000000 +0200
 @@ -26,6 +26,8 @@ obj-$(CONFIG_PROM_CONSOLE)        += pro
  obj-$(CONFIG_STI_CONSOLE)         += sticon.o sticore.o font.o
  obj-$(CONFIG_VGA_CONSOLE)         += vgacon.o
@@ -4568,7 +4565,7 @@ diff -Naurp linux-2.6.28.3-orig/drivers/video/console/Makefile linux-2.6.28.3/dr
  obj-$(CONFIG_FRAMEBUFFER_CONSOLE)     += tileblit.o
 diff -Naurp linux-2.6.28.3-orig/drivers/video/console/ts72xx_con.c linux-2.6.28.3/drivers/video/console/ts72xx_con.c
 --- linux-2.6.28.3-orig/drivers/video/console/ts72xx_con.c	1970-01-01 01:00:00.000000000 +0100
-+++ linux-2.6.28.3/drivers/video/console/ts72xx_con.c	2009-03-07 16:12:15.000000000 +0100
++++ linux-2.6.28.3/drivers/video/console/ts72xx_con.c	2009-04-04 21:26:25.000000000 +0200
 @@ -0,0 +1,423 @@
 +/*
 + *  TS-72XX lcd console driver for Technologic Systems boards.
@@ -4995,7 +4992,7 @@ diff -Naurp linux-2.6.28.3-orig/drivers/video/console/ts72xx_con.c linux-2.6.28.
 +module_exit(ts72xx_lcd_exit);
 diff -Naurp linux-2.6.28.3-orig/drivers/watchdog/Kconfig linux-2.6.28.3/drivers/watchdog/Kconfig
 --- linux-2.6.28.3-orig/drivers/watchdog/Kconfig	2009-02-06 21:44:13.000000000 +0100
-+++ linux-2.6.28.3/drivers/watchdog/Kconfig	2009-03-07 16:12:15.000000000 +0100
++++ linux-2.6.28.3/drivers/watchdog/Kconfig	2009-04-04 21:26:25.000000000 +0200
 @@ -233,6 +233,18 @@ config ORION5X_WATCHDOG
  	  To compile this driver as a module, choose M here: the
  	  module will be called orion5x_wdt.
@@ -5017,7 +5014,7 @@ diff -Naurp linux-2.6.28.3-orig/drivers/watchdog/Kconfig linux-2.6.28.3/drivers/
  # AVR32 Architecture
 diff -Naurp linux-2.6.28.3-orig/drivers/watchdog/Makefile linux-2.6.28.3/drivers/watchdog/Makefile
 --- linux-2.6.28.3-orig/drivers/watchdog/Makefile	2009-02-06 21:44:13.000000000 +0100
-+++ linux-2.6.28.3/drivers/watchdog/Makefile	2009-03-07 16:12:15.000000000 +0100
++++ linux-2.6.28.3/drivers/watchdog/Makefile	2009-04-04 21:26:25.000000000 +0200
 @@ -37,6 +37,7 @@ obj-$(CONFIG_S3C2410_WATCHDOG) += s3c241
  obj-$(CONFIG_SA1100_WATCHDOG) += sa1100_wdt.o
  obj-$(CONFIG_MPCORE_WATCHDOG) += mpcore_wdt.o
@@ -5028,7 +5025,7 @@ diff -Naurp linux-2.6.28.3-orig/drivers/watchdog/Makefile linux-2.6.28.3/drivers
  obj-$(CONFIG_DAVINCI_WATCHDOG) += davinci_wdt.o
 diff -Naurp linux-2.6.28.3-orig/drivers/watchdog/ts72xx_wdt.c linux-2.6.28.3/drivers/watchdog/ts72xx_wdt.c
 --- linux-2.6.28.3-orig/drivers/watchdog/ts72xx_wdt.c	1970-01-01 01:00:00.000000000 +0100
-+++ linux-2.6.28.3/drivers/watchdog/ts72xx_wdt.c	2009-03-07 16:12:15.000000000 +0100
++++ linux-2.6.28.3/drivers/watchdog/ts72xx_wdt.c	2009-04-04 21:26:25.000000000 +0200
 @@ -0,0 +1,332 @@
 +/*
 + *	TS-72xx Watchdog Driver for Technologic Systems boards.

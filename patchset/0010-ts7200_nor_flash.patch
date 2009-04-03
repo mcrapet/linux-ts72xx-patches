@@ -1,13 +1,13 @@
-From 15292ce196f603176dc339db5a67a333aeccd230 Mon Sep 17 00:00:00 2001
+From 78c9dff700880cfae285888639f74625aa1d1777 Mon Sep 17 00:00:00 2001
 From: Matthieu Crapet <mcrapet@gmail.com>
-Date: Sat, 7 Feb 2009 15:24:20 +0100
+Date: Sat, 4 Apr 2009 20:54:15 +0200
 Subject: [PATCH 10/20] ts7200_nor_flash
 
 ---
  drivers/mtd/maps/Kconfig        |    8 +++
  drivers/mtd/maps/Makefile       |    2 +
- drivers/mtd/maps/ts7200_flash.c |  109 +++++++++++++++++++++++++++++++++++++++
- 3 files changed, 119 insertions(+), 0 deletions(-)
+ drivers/mtd/maps/ts7200_flash.c |  106 +++++++++++++++++++++++++++++++++++++++
+ 3 files changed, 116 insertions(+), 0 deletions(-)
  create mode 100644 drivers/mtd/maps/ts7200_flash.c
 
 diff --git a/drivers/mtd/maps/Kconfig b/drivers/mtd/maps/Kconfig
@@ -41,10 +41,10 @@ index 6d9ba35..d2843b3 100644
 +
 diff --git a/drivers/mtd/maps/ts7200_flash.c b/drivers/mtd/maps/ts7200_flash.c
 new file mode 100644
-index 0000000..9113abd
+index 0000000..efc5f00
 --- /dev/null
 +++ b/drivers/mtd/maps/ts7200_flash.c
-@@ -0,0 +1,109 @@
+@@ -0,0 +1,106 @@
 +/*
 + * ts7200_flash.c - mapping for TS-7200 SBCs (8mb NOR flash)
 + * No platform_device resource is used here. All is hardcoded.
@@ -67,9 +67,6 @@ index 0000000..9113abd
 +#include <linux/mtd/mtd.h>
 +#include <linux/mtd/map.h>
 +#include <linux/mtd/partitions.h>
-+
-+#define STRINGIFY(x) #x
-+#define TOSTRING(x) STRINGIFY(x)
 +
 +#define WINDOW_ADDR          0x60000000
 +#define WINDOW_SIZE          SZ_8M
@@ -153,7 +150,7 @@ index 0000000..9113abd
 +
 +MODULE_LICENSE("GPL");
 +MODULE_AUTHOR("Matthieu Crapet <mcrapet@gmail.com>");
-+MODULE_DESCRIPTION("MTD map driver for TS-7200 board (" TOSTRING(WINDOW_READABLE_SIZE) "MB flash version)");
++MODULE_DESCRIPTION("MTD map driver for TS-7200 board (" __MODULE_STRING(WINDOW_READABLE_SIZE) "MB flash version)");
 -- 
-1.5.6.5
+1.6.2.1
 
