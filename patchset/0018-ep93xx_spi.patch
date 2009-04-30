@@ -1,8 +1,9 @@
-From ffbab11f29eb1ae2698e388ce3b7c4fc6520c33a Mon Sep 17 00:00:00 2001
+From cd9e386a8029afbe41de0bd63b71ea2ffa6747af Mon Sep 17 00:00:00 2001
 From: Matthieu Crapet <mcrapet@gmail.com>
 Date: Sun, 5 Apr 2009 14:50:12 +0200
 Subject: [PATCH 18/23] ep93xx_spi
 
+Fixed some sparse warnings.
 ---
  arch/arm/mach-ep93xx/clock.c            |    5 +-
  arch/arm/mach-ep93xx/core.c             |   29 ++
@@ -45,7 +46,7 @@ index bc71ef3..c770d7f 100644
  
  
 diff --git a/arch/arm/mach-ep93xx/core.c b/arch/arm/mach-ep93xx/core.c
-index b204808..717c9db 100644
+index 5229ae6..e048265 100644
 --- a/arch/arm/mach-ep93xx/core.c
 +++ b/arch/arm/mach-ep93xx/core.c
 @@ -44,6 +44,7 @@
@@ -235,7 +236,7 @@ index 5d04519..5cf010a 100644
  # SPI slave controller drivers (upstream link)
 diff --git a/drivers/spi/spi_ep93xx.c b/drivers/spi/spi_ep93xx.c
 new file mode 100644
-index 0000000..b2524d3
+index 0000000..4268541
 --- /dev/null
 +++ b/drivers/spi/spi_ep93xx.c
 @@ -0,0 +1,496 @@
@@ -296,12 +297,12 @@ index 0000000..b2524d3
 +  struct ep93xx_spi_chip *cs_chip; /* Chip Select function */
 +};
 +
-+static inline u16 read_reg(void *base, off_t offset)
++static inline u16 read_reg(void __iomem *base, off_t offset)
 +{
 +	return __raw_readw(base + offset);
 +}
 +
-+static inline void write_reg(u16 v, void *base, off_t offset)
++static inline void write_reg(u16 v, void __iomem *base, off_t offset)
 +{
 +	__raw_writew(v, base + offset);
 +}
@@ -555,9 +556,9 @@ index 0000000..b2524d3
 +
 +	write_reg(v, drv_data->ioaddr, SSPCR0);
 +
-+	if(!spi->max_speed_hz){
++	if (!spi->max_speed_hz) {
 +		spi->max_speed_hz = drv_data->freq_min;
-+	}else if(spi->max_speed_hz > drv_data->freq_max ||
++	} else if (spi->max_speed_hz > drv_data->freq_max ||
 +			spi->max_speed_hz < drv_data->freq_min){
 +		return -EINVAL;
 +	}
@@ -583,13 +584,13 @@ index 0000000..b2524d3
 +	struct device *dev = &pdev->dev;
 +	struct spi_master *master;
 +	struct ep93xx_spi_data *spi_data = pdev->dev.platform_data;
-+	struct ep93xx_spi *drv_data = 0;
++	struct ep93xx_spi *drv_data = NULL;
 +	struct resource *memory_resource;
 +	int irq, status = 0, min_div = 2, max_div = 254*(255+1);
 +
-+
-+	/* Check I2SonSSP bit (ssp pins and i2s pins are multiplexed) */
-+	if (readl(EP93XX_SYSCON_DEVCFG) & 0x80)
++	/* Check I2SonSSP bit (ssp pins and i2s pins are multiplexed)
++	   We could force with ep93xx_devcfg_clear_bits */
++	if (readl(EP93XX_SYSCON_DEVCFG) & EP93XX_SYSCON_DEVCFG_I2SONSSP)
 +		return -ENODEV;
 +
 +	/* Allocate master with space for drv_data */
@@ -609,7 +610,7 @@ index 0000000..b2524d3
 +
 +	drv_data = spi_master_get_devdata(master);
 +	drv_data->master = master;
-+	drv_data->ioaddr = (unsigned long *)memory_resource->start;
++	drv_data->ioaddr = (void *)memory_resource->start;
 +	drv_data->clk = clk_get(&pdev->dev, "sspclk");
 +	drv_data->freq_max = clk_get_rate(drv_data->clk) / min_div;
 +	drv_data->freq_min = clk_get_rate(drv_data->clk) / max_div + 1;
@@ -734,7 +735,7 @@ index 0000000..b2524d3
 +MODULE_AUTHOR("Matthieu Crapet <mcrapet@gmail.com>");
 +MODULE_DESCRIPTION("EP93xx SPI Controller Driver");
 +MODULE_LICENSE("GPL");
-+MODULE_VERSION("0.22");
++MODULE_VERSION("0.23");
 diff --git a/drivers/spi/spi_ep93xx.h b/drivers/spi/spi_ep93xx.h
 new file mode 100644
 index 0000000..6fad735

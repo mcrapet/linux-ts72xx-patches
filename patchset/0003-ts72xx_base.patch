@@ -1,13 +1,16 @@
-From 4a2e7384e01bd7a52769dfeb6edebd66dbeecc2e Mon Sep 17 00:00:00 2001
+From 8867d7ac51ca45359f4c63faa4a547352cd87a48 Mon Sep 17 00:00:00 2001
 From: Matthieu Crapet <mcrapet@gmail.com>
 Date: Sun, 5 Apr 2009 13:18:37 +0200
 Subject: [PATCH 03/23] ts72xx_base
 
+Added:
+ep93xx:core.c: build warning fix
+http://www.arm.linux.org.uk/developer/patches/viewpatch.php?id=5451/1
 ---
  arch/arm/Kconfig                                |    1 +
  arch/arm/include/asm/memory.h                   |    2 +
  arch/arm/mach-ep93xx/Kconfig                    |    9 +++
- arch/arm/mach-ep93xx/core.c                     |    2 -
+ arch/arm/mach-ep93xx/core.c                     |    4 +-
  arch/arm/mach-ep93xx/include/mach/ep93xx-regs.h |   11 +++
  arch/arm/mach-ep93xx/include/mach/memory.h      |   28 +++++++
  arch/arm/mach-ep93xx/include/mach/system.h      |    2 -
@@ -15,7 +18,7 @@ Subject: [PATCH 03/23] ts72xx_base
  arch/arm/mach-ep93xx/include/mach/uncompress.h  |   65 +++++++++++++++++
  arch/arm/mach-ep93xx/ts72xx.c                   |   35 +++++++++-
  arch/arm/mm/proc-arm920.S                       |    5 +-
- 11 files changed, 238 insertions(+), 8 deletions(-)
+ 11 files changed, 239 insertions(+), 9 deletions(-)
 
 diff --git a/arch/arm/Kconfig b/arch/arm/Kconfig
 index dbfdf87..5535acf 100644
@@ -65,9 +68,18 @@ index 56bddce..f06ef35 100644
  
  config MACH_ADSSPHERE
 diff --git a/arch/arm/mach-ep93xx/core.c b/arch/arm/mach-ep93xx/core.c
-index 2560a6a..009e796 100644
+index 2560a6a..ed0e6b7 100644
 --- a/arch/arm/mach-ep93xx/core.c
 +++ b/arch/arm/mach-ep93xx/core.c
+@@ -100,7 +100,7 @@ static unsigned int last_jiffy_time;
+ 
+ #define TIMER4_TICKS_PER_JIFFY		((CLOCK_TICK_RATE + (HZ/2)) / HZ)
+ 
+-static int ep93xx_timer_interrupt(int irq, void *dev_id)
++static irqreturn_t ep93xx_timer_interrupt(int irq, void *dev_id)
+ {
+ 	__raw_writel(1, EP93XX_TIMER1_CLEAR);
+ 	while ((signed long)
 @@ -576,8 +576,6 @@ extern void ep93xx_gpio_init(void);
  
  void __init ep93xx_init_devices(void)

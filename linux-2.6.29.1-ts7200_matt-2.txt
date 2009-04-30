@@ -1,4 +1,4 @@
-Release notes about "linux-2.6.29.1-ts7200_matt-1" patch
+Release notes about "linux-2.6.29.1-ts7200_matt-2" patch
 This is mainly created for EP9301 & EP9302 CPUs and more especially for TS-7200, TS-7250 & TS-7260
 SBCs manufactured by Technologic Systems (http://www.embeddedarm.com).
 
@@ -46,13 +46,16 @@ Short version
 
 Notes
 =====
-This patch reuse previous work for earlier kernels ( 2.6.27.4, 2.6.24.4 and 2.6.28.3).
+This patch reuse previous work for earlier kernels (2.6.27.4, 2.6.24.4 and 2.6.28.3).
 
 2.6.29 suppress one more patch "ep93xx_debounce_irq". It does add much compared to 2.6.28.x
 DMA engine is not included yet.
 
 For potential memory problems (we use sparse memory model), try adding some params to the kernel command:
 mem=8M@0x0 mem=8M@16M mem=8M@64M mem=8M@80M
+
+Some SBCs (especially those with 32mb SRAM) were experiencing the "cat /proc/pagetypeinfo" oops.
+Please apply "tmp/double_check_mel.patch".
 
 TODO:
 * ts72xx_con: if no LCD is connected, modprobe is stuck (wait busy flag from LCD on GPIO port A)
@@ -72,6 +75,25 @@ $ INSTALL_MOD_PATH=/your-path-to/nfsroot make modules_install
 
   EP93xx processor
   ----------------
+  
+  # EP93XX GPIO. As "CONFIG_GPIOLIB" is supported, we can enable "CONFIG_GPIO_SYSFS" to have sysfs entries
+    Example with TS-72xx DIO 2x8 header:
+
+    $ echo 8  >/sys/class/gpio/export    // DIO_0 = Port B, bit 0
+    $ echo 9  >/sys/class/gpio/export    // DIO_1 = Port B, bit 1
+    $ echo 10 >/sys/class/gpio/export    // DIO_2 = Port B, bit 2
+    $ echo 11 >/sys/class/gpio/export    // DIO_3 = Port B, bit 3
+    $ echo 12 >/sys/class/gpio/export    // DIO_4 = Port B, bit 4
+    $ echo 13 >/sys/class/gpio/export    // DIO_5 = Port B, bit 5
+    $ echo 14 >/sys/class/gpio/export    // DIO_6 = Port B, bit 6 (can be already reserved for I2C SDA pin)
+    $ echo 15 >/sys/class/gpio/export    // DIO_7 = Port B, bit 7 (can be already reserved for I2C SCL pin)
+    $ echo 17 >/sys/class/gpio/export    // DIO_8 = Port F, bit 1
+
+    A new file "gpio8" will appear:
+
+    $ echo out >/sys/class/gpio/gpio8/direction 
+    $ echo 1 >/sys/class/gpio/gpio8/value
+    $ echo 0 >/sys/class/gpio/gpio8/value
 
   # EP93XX spi controller (module named spi_ep93xx.ko). It is a platform driver.
     Driver has been reworked by Marco <greywolf82@hotmail.it> for adding a workqueue, and dynamic frenquency setup.
@@ -190,6 +212,14 @@ $ INSTALL_MOD_PATH=/your-path-to/nfsroot make modules_install
 
 ChangeLog
 =========
+linux-2.6.29.1-ts7200_matt-2 (2009.may.01)
+
+	* ts7200_noeabi_defconfig: enabled CONFIG_GPIO_SYSFS
+	* ts72xx_base: applied #5451/1 (from Hartley Sweeten)
+	  http://www.arm.linux.org.uk/developer/patches/viewpatch.php?id=5451/1
+	* ep93xx_spi: fixed some sparse warning.
+	+ temporary fix for `cat /proc/pagetypeinfo` oops (see tmp/double_check_mel.patch)
+
 linux-2.6.29.1-ts7200_matt-1 (2009.apr.04)
 
 	* Initial release
