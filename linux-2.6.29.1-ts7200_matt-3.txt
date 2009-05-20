@@ -1,4 +1,4 @@
-Release notes about "linux-2.6.29.1-ts7200_matt-2" patch
+Release notes about "linux-2.6.29.1-ts7200_matt-3" patch
 This is mainly created for EP9301 & EP9302 CPUs and more especially for TS-7200, TS-7250 & TS-7260
 SBCs manufactured by Technologic Systems (http://www.embeddedarm.com).
 
@@ -22,6 +22,7 @@ Short version
   - SPI (master driver)
   - USB 2.0
   - Leds (red and green)
+  - PWM
   - /proc/cpuinfo : ep93xx cpu revision & uniq ID
 
   TS-72xx SBCs
@@ -48,7 +49,7 @@ Notes
 =====
 This patch reuse previous work for earlier kernels (2.6.27.4, 2.6.24.4 and 2.6.28.3).
 
-2.6.29 suppress one more patch "ep93xx_debounce_irq". It does add much compared to 2.6.28.x
+2.6.29 suppress one more patch "ep93xx_debounce_irq". It does not add much compared to 2.6.28.x
 DMA engine is not included yet.
 
 For potential memory problems (we use sparse memory model), try adding some params to the kernel command:
@@ -60,13 +61,31 @@ Please apply "tmp/double_check_mel.patch".
 TODO:
 * ts72xx_con: if no LCD is connected, modprobe is stuck (wait busy flag from LCD on GPIO port A)
 
+Available 'defconfig'
+---------------------
+* ts7200_eabi_full: perfect for development, NFS/USB root support, NOR flash support.
+  ETH, CF (compact flash), I2C, SPI, GPIO, LED, RTC (ep93xx-rtc & rtc-m48t86), HID are embedded.
+  zImage is ~1.9mo. Note: NFS client is about 200kb.
+
+* ts72xx_eabi_full: same as "ts7200_eabi_full" but with TS-7200 product specificities.
+  No MTD (NOR flash) support, no PATA (compatch flash).
+  zImage is ~1.8mo.
+
+* ts72xx_eabi_mid: same as "ts72xx_eabi_full" except that USB/HID/SCSI stuff are compiled as modules.
+  Disabled "CPU Frequency scaling" & "CPU idle PM support".
+  zImage is ~1.6mo.
+
+* ts72xx_eabi_small: same as "ts72xx_eabi_mid" but.. moved I2C, SPI, LED to modules.
+  Also moved filesystems EXT2 & EXT3 to module compilation.
+  zImage is ~1.4mo.
+
 
 Long version
 ============
 
 To compile (once patch is applied):
-$ cp /../ts7200_defconfig /../linux-2.6.29.1/arch/arm/configs/
-$ make ts7200_defconfig
+$ cp /../ts72xx_eabi_full_defconfig /../linux-2.6.29.1/arch/arm/configs/
+$ make ts72xx_eabi_full_defconfig
 $ vi +/^CROSS Makefile                  // fix path of your toolchain
 $ make menuconfig
 $ make
@@ -152,6 +171,26 @@ $ INSTALL_MOD_PATH=/your-path-to/nfsroot make modules_install
     $ cat /proc/cpuinfo | grep MIPS            $ cat /proc/cpuinfo | grep MIPS
     BogoMIPS        : 20.68                    BogoMIPS        : 82.73
 
+  # PWM driver(module named ep93xx_pwm.ko). EP93XX has got two channels (range is 225Hz to 14745600Hz)
+    On TS-72xx machine I enable PWM1 which is available through header (DIO_6)
+    Note: PWM1 is multiplexed with port B bit 6 GPIO (EGPIO[14])
+
+    $ echo 75 > /sys/devices/platform/ep93xx-pwm.1/duty
+    $ cat /sys/devices/platform/ep93xx-pwm.1/duty
+    75%
+
+    $ echo 555 > /sys/devices/platform/ep93xx-pwm.1/cycle 
+    $ cat /sys/devices/platform/ep93xx-pwm.1/cycle 
+    555 Hz
+
+    $ echo 0 > /sys/devices/platform/ep93xx-pwm.1/cycle 
+    cat /sys/devices/platform/ep93xx-pwm.1/cycle 
+    disabled
+
+    $ echo 1234567 > /sys/devices/platform/ep93xx-pwm.1/cycle
+    $ cat /sys/devices/platform/ep93xx-pwm.1/cycle
+    1340509 Hz
+
 
   TS-72xx SBCs
   ------------
@@ -163,7 +202,7 @@ $ INSTALL_MOD_PATH=/your-path-to/nfsroot make modules_install
     $ cat /sys/bus/spi/devices/spi1.0/temperature
     28.56
 
-    Bug: first cat always returns 0, the following reads are good.
+    BUG: first cat always returns 0, the following reads are good.
 
   # Flash mapping driver for 8mo NOR strata-flash. This is some harcoded partitions values:
     [0x60000000 - 0x60020000[ size=0x20000  (131072 = 1 block)    : TS-BOOTROM (read-only)
@@ -212,6 +251,13 @@ $ INSTALL_MOD_PATH=/your-path-to/nfsroot make modules_install
 
 ChangeLog
 =========
+linux-2.6.29.1-ts7200_matt-3 (2009.may.21)
+
+	+ ep93xx_pwm: new platform driver
+	* ep93xx_spi: fixed clock rate value (EP93XX_EXT_CLK_RATE/2)
+	* ts7200_cf_ide: fixed trailing whitespace in makefile
+	* created several "ts7200_xxx_defconfig: see documentation above
+
 linux-2.6.29.1-ts7200_matt-2 (2009.may.01)
 
 	* ts7200_noeabi_defconfig: enabled CONFIG_GPIO_SYSFS

@@ -1,8 +1,9 @@
-From 0ffc97716aa727302b9ad2ad5c8ea1b9326d7942 Mon Sep 17 00:00:00 2001
+From a741afb42ff2213ffaea60895501ce76d41113d1 Mon Sep 17 00:00:00 2001
 From: Matthieu Crapet <mcrapet@gmail.com>
 Date: Sun, 5 Apr 2009 15:10:30 +0200
-Subject: [PATCH 22/23] ts7200_cf_ide
+Subject: [PATCH 22/25] ts7200_cf_ide
 
+- fix trailing whitespace in makefile
 ---
  drivers/ide/Kconfig         |    7 +++++
  drivers/ide/Makefile        |    1 +
@@ -29,14 +30,14 @@ index 5ea3bfa..c2676e2 100644
  	tristate "ICS IDE interface support"
  	depends on ARM && ARCH_ACORN
 diff --git a/drivers/ide/Makefile b/drivers/ide/Makefile
-index 1c326d9..06c1daf 100644
+index 1c326d9..4d9d973 100644
 --- a/drivers/ide/Makefile
 +++ b/drivers/ide/Makefile
 @@ -111,6 +111,7 @@ obj-$(CONFIG_BLK_DEV_PLATFORM)		+= ide_platform.o
  obj-$(CONFIG_BLK_DEV_IDE_ICSIDE)	+= icside.o
  obj-$(CONFIG_BLK_DEV_IDE_RAPIDE)	+= rapide.o
  obj-$(CONFIG_BLK_DEV_PALMCHIP_BK3710)	+= palm_bk3710.o
-+obj-$(CONFIG_BLK_DEV_TS7200_CF)		+= ide_ts7200_cf.o 
++obj-$(CONFIG_BLK_DEV_TS7200_CF)		+= ide_ts7200_cf.o
  
  obj-$(CONFIG_BLK_DEV_IDE_AU1XXX)	+= au1xxx-ide.o
  

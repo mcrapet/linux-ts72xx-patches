@@ -1,9 +1,10 @@
-From cd9e386a8029afbe41de0bd63b71ea2ffa6747af Mon Sep 17 00:00:00 2001
+From 2e80882602ad3c660a8d23c38879608deab6c058 Mon Sep 17 00:00:00 2001
 From: Matthieu Crapet <mcrapet@gmail.com>
 Date: Sun, 5 Apr 2009 14:50:12 +0200
-Subject: [PATCH 18/23] ep93xx_spi
+Subject: [PATCH 18/25] ep93xx_spi
 
-Fixed some sparse warnings.
+- fixed some sparse warnings
+- fixed ssp clock rate
 ---
  arch/arm/mach-ep93xx/clock.c            |    5 +-
  arch/arm/mach-ep93xx/core.c             |   29 ++
@@ -21,7 +22,7 @@ Fixed some sparse warnings.
  create mode 100644 drivers/spi/tmp124.c
 
 diff --git a/arch/arm/mach-ep93xx/clock.c b/arch/arm/mach-ep93xx/clock.c
-index bc71ef3..c770d7f 100644
+index bc71ef3..0ae2740 100644
 --- a/arch/arm/mach-ep93xx/clock.c
 +++ b/arch/arm/mach-ep93xx/clock.c
 @@ -44,9 +44,11 @@ struct clk {
@@ -32,7 +33,7 @@ index bc71ef3..c770d7f 100644
  static unsigned long get_uart_rate(struct clk *clk);
  
 +static struct clk clk_ssp = {
-+	.rate		= 7400000,
++	.rate		= EP93XX_EXT_CLK_RATE / 2,
 +};
  
  static struct clk clk_uart1 = {
