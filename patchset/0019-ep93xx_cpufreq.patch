@@ -1,13 +1,15 @@
-From ffcf39d73efbe8c7bcd9f9f707b1c5aaef9d6623 Mon Sep 17 00:00:00 2001
+From 9eefc553924e26aec982a25561691d7a7f466bb0 Mon Sep 17 00:00:00 2001
 From: Matthieu Crapet <mcrapet@gmail.com>
 Date: Sun, 5 Apr 2009 14:51:35 +0200
-Subject: [PATCH 19/23] ep93xx_cpufreq
+Subject: [PATCH 19/25] ep93xx_cpufreq
 
+- regression: set correctly policy->min and policy->max
+- use ARRAY_SIZE, pr_debug, added some items in ep93xx_speed_settings_t (EP9301 only)
 ---
  arch/arm/Kconfig               |   13 ++-
  arch/arm/mach-ep93xx/Makefile  |    2 +
- arch/arm/mach-ep93xx/cpufreq.c |  275 ++++++++++++++++++++++++++++++++++++++++
- 3 files changed, 289 insertions(+), 1 deletions(-)
+ arch/arm/mach-ep93xx/cpufreq.c |  290 ++++++++++++++++++++++++++++++++++++++++
+ 3 files changed, 304 insertions(+), 1 deletions(-)
  create mode 100644 arch/arm/mach-ep93xx/cpufreq.c
 
 diff --git a/arch/arm/Kconfig b/arch/arm/Kconfig
@@ -56,10 +58,10 @@ index 673ef23..b2e692e 100644
  obj-$(CONFIG_MACH_EDB9302A)	+= edb9302a.o
 diff --git a/arch/arm/mach-ep93xx/cpufreq.c b/arch/arm/mach-ep93xx/cpufreq.c
 new file mode 100644
-index 0000000..cd90ca8
+index 0000000..bc4754f
 --- /dev/null
 +++ b/arch/arm/mach-ep93xx/cpufreq.c
-@@ -0,0 +1,275 @@
+@@ -0,0 +1,290 @@
 +/*
 + * cpufreq.c: clock scaling for Cirrus EP93XX embedded chip
 + *
@@ -100,6 +102,7 @@ index 0000000..cd90ca8
 + * Fout = 14.7456 * (PLL1_X1FBD + 1) * (PLL1_X2FBD + 1) / ((PLL1_X2IPD + 1) * 2 ^ PLL1_PS)
 + *      = 14.7456 * (PLL1_X1FBD + 1) * (PLL1_X2FBD + 1) / (PLL1_X2IPD + 1) / 2 ^ PLL1_PS
 + *
++ * PLL1_X2 output (before the PS divide), must be > 290Mhz and <= 528Mhz
 + *
 + * fclk [processor    ] = pll1 / fclk_divisor
 + * hclk [AHB bus clock] = pll1 / hclk_divisor
@@ -114,10 +117,12 @@ index 0000000..cd90ca8
 + * pclk max (MHz)           50            50
 + *
 + * Notes:
++ * - This driver does not use the clk_{get,put,roundrate} (clock.c) functions.
++ *   That's quite dirty, but clock.c is not complete yet.
++ * - Significant power saving is made by lowering hclk not fclk.
 + * - Ethernet (100 MBit) doesn't work with hclk < 25MHz.
-+ * - This driver does not use the clk_{put,roundrate} (clock.c) functions. It is
-+ *   standalone.
 + * - Is it safe to have fclk = hclk ?
++ * - calc_pll_rate is taken from clock.c (Lennert Buytenhek)
 + */
 +
 +#include <linux/kernel.h>
@@ -140,6 +145,9 @@ index 0000000..cd90ca8
 +    ( h << SYSCON_CLKSET1_HCLK_DIV_SHIFT) | \
 +    ( f << SYSCON_CLKSET1_FCLK_DIV_SHIFT))
 +
++/* SMC_ROM = 0, nBYP1 = 1 */
++#define PLL1_MASK(x1fbd1,x1fbd2,x2ipd) (0x800000 | (x1fbd1 << 11) | (x1fbd2 << 5) | (x2ipd))
++
 +typedef struct {
 +  int speed;    /* in kHz */
 +  u32 preset;   /* x1fbd, x2fbd and x2ipd are left unchanged */
@@ -149,19 +157,25 @@ index 0000000..cd90ca8
 +  u32 fdiv;     /* sets fclk, processor clk */
 +} ep93xx_speed_settings_t;
 +
-+static char fclk_divisors[] = { 1, 2, 4, 8, 16, 1, 1, 1 };
++static const char fclk_divisors[] = { 1, 2, 4, 8, 16, 1, 1, 1 };
 +
 +
-+/* Suitable for EP9301. Assumed: PLL1 = 331.8 MHz (X1FBD1=19, X1FBD2=17, X2IPD=15)*/
-+static ep93xx_speed_settings_t ep93xx_clkset1_settings[] =
++/* Suitable for EP9301. PLL1 rate (without final PS divider):
++   - PLL1_RATE(19,17,15) = 331.776 MHz
++   - PLL1_MASK(19, 7, 7) = 294.912 MHz
++ */
++static const ep93xx_speed_settings_t ep93xx_clkset1_settings[] =
 +{
 +  /* { speed, preset, pll1_ps, pdiv, hdiv, fdiv } */
-+  { 165888, 0x00809a2f, 0, 1, 3, 1 }, /* [0x02B49A2F] fclk=165.9 (fdiv=2), hclk=66.4 (hdiv=5), pclk=33.2 (pdiv=2), ps=1 */
-+  { 165887, 0x00809a2f, 1, 1, 3, 0 }, /* [0x00B59A2F] fclk=165.9 (fdiv=1), hclk=33.2 (hdiv=5), pclk=16.6 (pdiv=2), ps=2 */
-+  {  82944, 0x00809a2f, 0, 1, 3, 2 }, /* [0x04B49A2F] fclk=82.9 (fdiv=4), hclk=66.4 (hdiv=5), pclk=33.2 (pdiv=2), ps=1 */
-+  {  82943, 0x00809a2f, 0, 1, 4, 2 }, /* [0x04C49A2F] fclk=82.9 (fdiv=4), hclk=55.3 (hdiv=6), pclk=27.6 (pdiv=2), ps=1 */
-+  {  82942, 0x00809a2f, 1, 1, 2, 1 }, /* [0x02A59A2F] fclk=82.9 (fdiv=2), hclk=41.5 (hdiv=4), pclk=20.7 (pdiv=2), ps=2 */
-+  {  41472, 0x00809a2f, 0, 1, 5, 3 }, /* [0x06D49A2F] fclk=41.5 (fdiv=8), hclk=41.5 (hdiv=8), pclk=20.7 (pdiv=2), ps=1 */
++  { 165888, PLL1_MASK(19,17,15), 0, 1, 3, 1 }, /* [0x02B49A2F] fclk=165.9 (fdiv=2), hclk=66.4 (hdiv=5), pclk=33.2 (pdiv=2), ps=1 */
++  { 165887, PLL1_MASK(19,17,15), 1, 1, 3, 0 }, /* [0x00B59A2F] fclk=165.9 (fdiv=1), hclk=33.2 (hdiv=5), pclk=16.6 (pdiv=2), ps=2 */
++  { 147456, PLL1_MASK(19, 7, 7), 0, 1, 3, 1 }, /* [0x02B498E7] fclk=147.5 (fdiv=2), hclk=59.0 (hdiv=5), pclk=29.5 (pdiv=2), ps=1 */
++  { 147455, PLL1_MASK(19, 7, 7), 0, 2, 3, 1 }, /* [0x02B898E7] fclk=147.5 (fdiv=2), hclk=59.0 (hdiv=5), pclk=14.7 (pdiv=4), ps=1 */
++  {  73728, PLL1_MASK(19, 7, 7), 0, 1, 3, 2 }, /* [0x04B498E7] fclk=73.7 (fdiv=4), hclk=59.0 (hdiv=5), pclk=29.5 (pdiv=2), ps=1 */
++  {  82944, PLL1_MASK(19,17,15), 0, 1, 3, 2 }, /* [0x04B49A2F] fclk=82.9 (fdiv=4), hclk=66.4 (hdiv=5), pclk=33.2 (pdiv=2), ps=1 */
++  {  82943, PLL1_MASK(19,17,15), 0, 1, 4, 2 }, /* [0x04C49A2F] fclk=82.9 (fdiv=4), hclk=55.3 (hdiv=6), pclk=27.6 (pdiv=2), ps=1 */
++  {  82942, PLL1_MASK(19,17,15), 1, 1, 2, 1 }, /* [0x02A59A2F] fclk=82.9 (fdiv=2), hclk=41.5 (hdiv=4), pclk=20.7 (pdiv=2), ps=2 */
++  {  41472, PLL1_MASK(19,17,15), 0, 1, 5, 3 }, /* [0x06D49A2F] fclk=41.5 (fdiv=8), hclk=41.5 (hdiv=8), pclk=20.7 (pdiv=2), ps=1 */
 +};
 +
 +#if 0
@@ -196,14 +210,14 @@ index 0000000..cd90ca8
 +}
 +
 +
-+static ep93xx_speed_settings_t *ep93xx_find_clkset1(unsigned int khz, unsigned int relation)
++static const ep93xx_speed_settings_t *ep93xx_find_clkset1(unsigned int khz, unsigned int relation)
 +{
 +  int i;
-+  ep93xx_speed_settings_t *p = &ep93xx_clkset1_settings[0];
++  const ep93xx_speed_settings_t *p = &ep93xx_clkset1_settings[0];
 +
 +  switch (relation) {
 +    case CPUFREQ_RELATION_L: /* lowest frequency at or above target */
-+      for (i = 0; i < sizeof(ep93xx_clkset1_settings)/sizeof(ep93xx_speed_settings_t); i++) {
++      for (i = 0; i < ARRAY_SIZE(ep93xx_clkset1_settings); i++) {
 +        if (ep93xx_clkset1_settings[i].speed < khz)
 +          continue;
 +        if (p->speed > ep93xx_clkset1_settings[i].speed) // take lowest value
@@ -212,7 +226,7 @@ index 0000000..cd90ca8
 +      break;
 +
 +    case CPUFREQ_RELATION_H: /* highest frequency below or at target */
-+      for (i = 0; i < sizeof(ep93xx_clkset1_settings)/sizeof(ep93xx_speed_settings_t); i++) {
++      for (i = 0; i < ARRAY_SIZE(ep93xx_clkset1_settings); i++) {
 +        if (ep93xx_clkset1_settings[i].speed > khz)
 +          continue;
 +        if (p->speed < ep93xx_clkset1_settings[i].speed) // take highest value
@@ -262,7 +276,7 @@ index 0000000..cd90ca8
 +    unsigned int relation)
 +{
 +  struct cpufreq_freqs freqs;
-+  ep93xx_speed_settings_t *config;
++  const ep93xx_speed_settings_t *config;
 +  u32 value;
 +
 +  config =  ep93xx_find_clkset1(target_freq, relation);
@@ -272,7 +286,7 @@ index 0000000..cd90ca8
 +  freqs.cpu = 0;
 +  freqs.flags = 0;
 +
-+  //printk("ep93xx: target_freq=%d, old=%d new=%d (kHz) rel=%d\n", target_freq, freqs.old, freqs.new, relation);
++  pr_debug("ep93xx: target_freq=%d, old=%d new=%d (kHz) rel=%d\n", target_freq, freqs.old, freqs.new, relation);
 +
 +  cpufreq_notify_transition(&freqs, CPUFREQ_PRECHANGE);
 +
@@ -280,7 +294,7 @@ index 0000000..cd90ca8
 +      config->pdiv, config->hdiv, config->fdiv);
 +  __raw_writel(value, EP93XX_SYSCON_CLOCK_SET1);
 +
-+  /* 5 nops required to fluch instruction pipeline */
++  /* 5 nops required to flush instruction pipeline */
 +  __asm__ __volatile__("nop; nop; nop; nop; nop");
 +
 +  cpufreq_notify_transition(&freqs, CPUFREQ_POSTCHANGE);
@@ -291,22 +305,24 @@ index 0000000..cd90ca8
 +
 +static int __init ep93xx_cpufreq_driver_init(struct cpufreq_policy *policy)
 +{
-+  printk(KERN_INFO "ep93xx-cpufreq: driver v1.0\n");
++  printk(KERN_INFO "ep93xx-cpufreq: driver v1.01\n");
 +
 +  if (policy->cpu != 0)
 +    return -EINVAL;
 +
-+  policy->cur = policy->min = policy->max = ep93xx_get_speed(0);
++  policy->cur = ep93xx_get_speed(0);
++  policy->min = 25000;
 +
 +  policy->cpuinfo.min_freq = 13000;
 +
-+  /* Check CPU version (ep9301 special case) */
++  /* All EP93xx are running up to 200Mhz, except EP9301 */
 +  if (policy->cur <= 166000)
 +    policy->cpuinfo.max_freq = 166000;
 +  else
 +    policy->cpuinfo.max_freq = 200000;
 +
-+  policy->cpuinfo.transition_latency = 1000000; /* 1ms (unknown = CPUFREQ_ETERNAL) */
++  policy->cpuinfo.transition_latency = 1600000; /* 8..16ms (according to datasheet) */
++  policy->max = policy->cpuinfo.max_freq;
 +
 +  return 0;
 +}
@@ -335,6 +351,7 @@ index 0000000..cd90ca8
 +
 +MODULE_DESCRIPTION("CPU frequency scaling driver for EP93xx");
 +MODULE_LICENSE("GPL");
++MODULE_VERSION("1.01");
 -- 
 1.6.2.1
 

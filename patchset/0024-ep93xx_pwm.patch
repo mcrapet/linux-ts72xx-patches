@@ -1,16 +1,18 @@
-From a7f31215a4e0351ee7cfdbc2e241052a95cfd7ea Mon Sep 17 00:00:00 2001
+From 259c9a7c6bb4ad109643a14e1e31f7ae979d8d45 Mon Sep 17 00:00:00 2001
 From: Matthieu Crapet <mcrapet@gmail.com>
 Date: Thu, 21 May 2009 12:20:33 +0200
-Subject: [PATCH 24/24] ep93xx_pwm
+Subject: [PATCH 25/25] ep93xx_pwm
 
+- now use correctly IS_ERR, PTR_ERR
+- added missing clk_put in remove function
 ---
  arch/arm/mach-ep93xx/clock.c                    |    5 +
  arch/arm/mach-ep93xx/include/mach/ep93xx-regs.h |    9 +
  arch/arm/mach-ep93xx/ts72xx.c                   |    5 +
  drivers/misc/Kconfig                            |    7 +
  drivers/misc/Makefile                           |    1 +
- drivers/misc/ep93xx_pwm.c                       |  259 +++++++++++++++++++++++
- 6 files changed, 286 insertions(+), 0 deletions(-)
+ drivers/misc/ep93xx_pwm.c                       |  260 +++++++++++++++++++++++
+ 6 files changed, 287 insertions(+), 0 deletions(-)
  create mode 100644 drivers/misc/ep93xx_pwm.c
 
 diff --git a/arch/arm/mach-ep93xx/clock.c b/arch/arm/mach-ep93xx/clock.c
@@ -103,10 +105,10 @@ index 3139ca9..42a47d8 100644
  obj-y				+= eeprom/
 diff --git a/drivers/misc/ep93xx_pwm.c b/drivers/misc/ep93xx_pwm.c
 new file mode 100644
-index 0000000..84517eb
+index 0000000..82fa596
 --- /dev/null
 +++ b/drivers/misc/ep93xx_pwm.c
-@@ -0,0 +1,259 @@
+@@ -0,0 +1,260 @@
 +/*
 + *  Simple PWM driver for EP93XX
 + *
@@ -290,9 +292,9 @@ index 0000000..84517eb
 +
 +  /* save clk for later use */
 +  pwm->clk = clk_get(&pdev->dev, "pwmclk");
-+  if (pwm->clk == ERR_PTR(-ENOENT)) {
++  if (IS_ERR(pwm->clk)) {
 +    dev_err(&pdev->dev, "pwm clock not available\n");
-+    retval = -ENODEV;
++    retval = PTR_ERR(pwm->clk);
 +    goto error4;
 +  }
 +
@@ -330,6 +332,7 @@ index 0000000..84517eb
 +
 +  pwm_disable(pdev->id);
 +  clk_disable(pwm->clk);
++  clk_put(pwm->clk);
 +
 +  if (pdev->id == 1) {
 +    ep93xx_devcfg_clear_bits(EP93XX_SYSCON_DEVCFG_PONG);
@@ -365,7 +368,7 @@ index 0000000..84517eb
 +MODULE_AUTHOR("Matthieu Crapet <mcrapet@gmail.com>");
 +MODULE_DESCRIPTION("EP93xx PWM driver");
 +MODULE_LICENSE("GPL");
-+MODULE_VERSION("0.1");
++MODULE_VERSION("0.11");
 -- 
 1.6.2.1
 

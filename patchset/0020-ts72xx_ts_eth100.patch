@@ -1,8 +1,9 @@
-From 58b181fc9fa52f5083934bd5b9b5c7f26578befa Mon Sep 17 00:00:00 2001
+From de9c3ee94ce81f6588cc38da9d7a860db63f9edc Mon Sep 17 00:00:00 2001
 From: Matthieu Crapet <mcrapet@gmail.com>
 Date: Sun, 5 Apr 2009 14:53:54 +0200
-Subject: [PATCH 20/23] ts72xx_ts_eth100
+Subject: [PATCH 20/25] ts72xx_ts_eth100
 
+- fix trailing whitespace (Kconfig)
 ---
  drivers/net/Kconfig             |   10 ++
  drivers/net/Makefile            |    1 +
@@ -12,7 +13,7 @@ Subject: [PATCH 20/23] ts72xx_ts_eth100
  create mode 100644 drivers/net/ax88796_ts_eth100.c
 
 diff --git a/drivers/net/Kconfig b/drivers/net/Kconfig
-index 62d732a..4a5de21 100644
+index 62d732a..25a6f19 100644
 --- a/drivers/net/Kconfig
 +++ b/drivers/net/Kconfig
 @@ -237,6 +237,16 @@ config AX88796_93CX6
@@ -24,10 +25,10 @@ index 62d732a..4a5de21 100644
 +	depends on AX88796 && MACH_TS72XX
 +	help
 +	  Say Y here if you have a TS-ETH100 PC/104 peripheral.
-+	  IRQ numbers and I/O address will be configurated automaticaly.
-+	  
++	  IRQ numbers and I/O address will be configurated automatically.
++
 +	  To compile this driver as a module, choose M here: the module
-+	  will be called ax88796_ts_eth100.     
++	  will be called ax88796_ts_eth100.
 +
  config MACE
  	tristate "MACE (Power Mac ethernet) support"

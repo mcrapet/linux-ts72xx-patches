@@ -1,14 +1,16 @@
-From 1bc693a8c2d117124afe98d5da8e890830c48a76 Mon Sep 17 00:00:00 2001
+From 3f640a3c98d227713e4483efc021b78fa9c96d7f Mon Sep 17 00:00:00 2001
 From: Matthieu Crapet <mcrapet@gmail.com>
 Date: Sun, 5 Apr 2009 13:40:46 +0200
-Subject: [PATCH 07/23] ts72xx_sbcinfo
+Subject: [PATCH 07/25] ts72xx_sbcinfo
 
+- print CPU revision
+- now use "board_is_ts7XXX" macros instead of reading 'model' register
 ---
  arch/arm/mach-ep93xx/Kconfig          |    7 ++
  arch/arm/mach-ep93xx/Makefile         |    1 +
  arch/arm/mach-ep93xx/ts72xx.c         |    5 +
- arch/arm/mach-ep93xx/ts72xx_sbcinfo.c |  147 +++++++++++++++++++++++++++++++++
- 4 files changed, 160 insertions(+), 0 deletions(-)
+ arch/arm/mach-ep93xx/ts72xx_sbcinfo.c |  154 +++++++++++++++++++++++++++++++++
+ 4 files changed, 167 insertions(+), 0 deletions(-)
  create mode 100644 arch/arm/mach-ep93xx/ts72xx_sbcinfo.c
 
 diff --git a/arch/arm/mach-ep93xx/Kconfig b/arch/arm/mach-ep93xx/Kconfig
@@ -56,10 +58,10 @@ index fd5c7fa..27f47a2 100644
  		.pfn		= __phys_to_pfn(TS72XX_OPTIONS_PHYS_BASE),
 diff --git a/arch/arm/mach-ep93xx/ts72xx_sbcinfo.c b/arch/arm/mach-ep93xx/ts72xx_sbcinfo.c
 new file mode 100644
-index 0000000..7fe4e77
+index 0000000..f2b8360
 --- /dev/null
 +++ b/arch/arm/mach-ep93xx/ts72xx_sbcinfo.c
-@@ -0,0 +1,147 @@
+@@ -0,0 +1,154 @@
 +/*
 + *  Technologic Systems TS-72XX sbc /proc/driver/sbcinfo entry.
 + *
@@ -77,34 +79,41 @@ index 0000000..7fe4e77
 +#include <linux/kernel.h>
 +#include <linux/init.h>
 +#include <linux/proc_fs.h>
-+#include <mach/ts72xx.h>
-+
++#include <mach/hardware.h>
 +
 +struct infos {
++  const char *cpu_rev;
 +  int model, pld;
 +  int option_ad;
 +  int option_rs485;
 +  unsigned char jumpers[6]; // 0=off,1=on,2=error
 +};
 +
++static const char *revisions[] = { "A", "B", "C", "D0", "D1", "E0", "E1", "E2", "??" };
++
++
 +static void get_sbcinfo(struct infos *data)
 +{
 +  void __iomem *p;
++  short rev;
++
++  /* CPU revision */
++  rev = __raw_readl(EP93XX_SYSCON_CHIPID) >> 28;
++  if (rev > ARRAY_SIZE(revisions))
++    rev = ARRAY_SIZE(revisions) - 1;
++  data->cpu_rev = revisions[rev];
 +
 +  /* Board model */
-+  switch (__raw_readb(TS72XX_MODEL_VIRT_BASE)) {
-+    case TS72XX_MODEL_TS7200:
-+      data->model = 7200;
-+      break;
-+    case  TS72XX_MODEL_TS7250:
-+      data->model = 7250;
-+      break;
-+    case  TS72XX_MODEL_TS7260:
-+      data->model = 7260;
-+      break;
-+    default:
-+      data->model = 0;
-+  }
++  if (board_is_ts7200())
++    data->model = 7200;
++  else if (board_is_ts7250())
++    data->model = 7250;
++  else if (board_is_ts7260())
++    data->model = 7260;
++  else if (board_is_ts7400())
++    data->model = 7400;
++  else
++    data->model = 0;
 +
 +  data->pld = get_ts72xx_pld_version();
 +
@@ -153,11 +162,11 @@ index 0000000..7fe4e77
 +
 +  get_sbcinfo(&nfo);
 +  len = scnprintf(p, size,
-+      "Model             : TS-%d (PLD rev %c)\n"
++      "Model             : TS-%d (CPU rev %s) (PLD rev %c)\n"
 +      "Option max197 A/D : %s\n"
 +      "Option RS-485     : %s\n"
 +      "Jumpers           : JP2=%c JP3=%c JP4=%c JP5=%c JP6=%c\n",
-+      nfo.model, nfo.pld + 0x40,
++      nfo.model, nfo.cpu_rev, nfo.pld + 0x40,
 +      (nfo.option_ad ? "yes" : "no"),
 +      (nfo.option_rs485 ? "yes" : "no"),
 +      jpc[nfo.jumpers[1]], jpc[nfo.jumpers[2]], jpc[nfo.jumpers[3]], jpc[nfo.jumpers[4]],
@@ -206,7 +215,7 @@ index 0000000..7fe4e77
 +MODULE_AUTHOR("Matthieu Crapet <mcrapet@gmail.com>");
 +MODULE_DESCRIPTION("Show information of Technologic Systems TS-72XX sbc");
 +MODULE_LICENSE("GPL");
-+MODULE_VERSION("1.0");
++MODULE_VERSION("1.01");
 -- 
 1.6.2.1
 

@@ -1,24 +1,27 @@
-From 8867d7ac51ca45359f4c63faa4a547352cd87a48 Mon Sep 17 00:00:00 2001
+From 4016bae62d363831ab8113b5af8d4e6e42f01e3b Mon Sep 17 00:00:00 2001
 From: Matthieu Crapet <mcrapet@gmail.com>
 Date: Sun, 5 Apr 2009 13:18:37 +0200
-Subject: [PATCH 03/23] ts72xx_base
+Subject: [PATCH 03/25] ts72xx_base
 
 Added:
-ep93xx:core.c: build warning fix
-http://www.arm.linux.org.uk/developer/patches/viewpatch.php?id=5451/1
+- ep93xx:core.c: build warning fix
+  http://www.arm.linux.org.uk/developer/patches/viewpatch.php?id=5451/1
+- ep93xx: core.c: trivial spelling error
+  http://www.arm.linux.org.uk/developer/patches/viewpatch.php?id=5527/1
+- more definitions (MODEL, NAND, RS485) in ts72xx.h
 ---
  arch/arm/Kconfig                                |    1 +
  arch/arm/include/asm/memory.h                   |    2 +
- arch/arm/mach-ep93xx/Kconfig                    |    9 +++
- arch/arm/mach-ep93xx/core.c                     |    4 +-
- arch/arm/mach-ep93xx/include/mach/ep93xx-regs.h |   11 +++
- arch/arm/mach-ep93xx/include/mach/memory.h      |   28 +++++++
+ arch/arm/mach-ep93xx/Kconfig                    |    9 ++
+ arch/arm/mach-ep93xx/core.c                     |   12 +--
+ arch/arm/mach-ep93xx/include/mach/ep93xx-regs.h |   11 ++
+ arch/arm/mach-ep93xx/include/mach/memory.h      |   28 ++++++
  arch/arm/mach-ep93xx/include/mach/system.h      |    2 -
- arch/arm/mach-ep93xx/include/mach/ts72xx.h      |   86 ++++++++++++++++++++++-
- arch/arm/mach-ep93xx/include/mach/uncompress.h  |   65 +++++++++++++++++
- arch/arm/mach-ep93xx/ts72xx.c                   |   35 +++++++++-
+ arch/arm/mach-ep93xx/include/mach/ts72xx.h      |  116 +++++++++++++++++++++--
+ arch/arm/mach-ep93xx/include/mach/uncompress.h  |   65 +++++++++++++
+ arch/arm/mach-ep93xx/ts72xx.c                   |   35 +++++++-
  arch/arm/mm/proc-arm920.S                       |    5 +-
- 11 files changed, 239 insertions(+), 9 deletions(-)
+ 11 files changed, 267 insertions(+), 19 deletions(-)
 
 diff --git a/arch/arm/Kconfig b/arch/arm/Kconfig
 index dbfdf87..5535acf 100644
@@ -68,7 +71,7 @@ index 56bddce..f06ef35 100644
  
  config MACH_ADSSPHERE
 diff --git a/arch/arm/mach-ep93xx/core.c b/arch/arm/mach-ep93xx/core.c
-index 2560a6a..ed0e6b7 100644
+index 2560a6a..4fef578 100644
 --- a/arch/arm/mach-ep93xx/core.c
 +++ b/arch/arm/mach-ep93xx/core.c
 @@ -100,7 +100,7 @@ static unsigned int last_jiffy_time;
@@ -80,6 +83,30 @@ index 2560a6a..ed0e6b7 100644
  {
  	__raw_writel(1, EP93XX_TIMER1_CLEAR);
  	while ((signed long)
+@@ -155,7 +155,7 @@ static unsigned char gpio_int_unmasked[3];
+ static unsigned char gpio_int_enabled[3];
+ static unsigned char gpio_int_type1[3];
+ static unsigned char gpio_int_type2[3];
+-static unsigned char gpio_int_debouce[3];
++static unsigned char gpio_int_debounce[3];
+ 
+ /* Port ordering is: A B F */
+ static const u8 int_type1_register_offset[3]	= { 0x90, 0xac, 0x4c };
+@@ -192,11 +192,11 @@ void ep93xx_gpio_int_debounce(unsigned int irq, int enable)
+ 	int port_mask = 1 << (line & 7);
+ 
+ 	if (enable)
+-		gpio_int_debouce[port] |= port_mask;
++		gpio_int_debounce[port] |= port_mask;
+ 	else
+-		gpio_int_debouce[port] &= ~port_mask;
++		gpio_int_debounce[port] &= ~port_mask;
+ 
+-	__raw_writeb(gpio_int_debouce[port],
++	__raw_writeb(gpio_int_debounce[port],
+ 		EP93XX_GPIO_REG(int_debounce_register_offset[port]));
+ }
+ EXPORT_SYMBOL(ep93xx_gpio_int_debounce);
 @@ -576,8 +576,6 @@ extern void ep93xx_gpio_init(void);
  
  void __init ep93xx_init_devices(void)
@@ -190,10 +217,10 @@ index 8ffbe53..9af1fc7 100644
  
  	/*
 diff --git a/arch/arm/mach-ep93xx/include/mach/ts72xx.h b/arch/arm/mach-ep93xx/include/mach/ts72xx.h
-index 34ddec0..3408551 100644
+index 34ddec0..a8c8826 100644
 --- a/arch/arm/mach-ep93xx/include/mach/ts72xx.h
 +++ b/arch/arm/mach-ep93xx/include/mach/ts72xx.h
-@@ -8,12 +8,23 @@
+@@ -8,21 +8,34 @@
   * virt		phys		size
   * febff000	22000000	4K	model number register
   * febfe000	22400000	4K	options register
@@ -218,15 +245,36 @@ index 34ddec0..3408551 100644
   */
  
  #define TS72XX_MODEL_PHYS_BASE		0x22000000
-@@ -59,7 +70,6 @@
+ #define TS72XX_MODEL_VIRT_BASE		0xfebff000
+ #define TS72XX_MODEL_SIZE		0x00001000
+ 
+-#define TS72XX_MODEL_TS7200		0x00
+-#define TS72XX_MODEL_TS7250		0x01
+-#define TS72XX_MODEL_TS7260		0x02
++#define TS7XXX_MODEL_TS7200		0x00
++#define TS7XXX_MODEL_TS7250		0x01
++#define TS7XXX_MODEL_TS7260		0x02
++#define TS7XXX_MODEL_TS7300		0x03
++#define TS7XXX_MODEL_TS7400		0x04
+ 
+ 
+ #define TS72XX_OPTIONS_PHYS_BASE	0x22400000
+@@ -53,12 +66,13 @@
+ #define TS72XX_NAND2_CONTROL_PHYS_BASE	0x70400000
+ #define TS72XX_NAND_CONTROL_VIRT_BASE	0xfebfb000
+ #define TS72XX_NAND_CONTROL_SIZE	0x00001000
++#define TS72XX_NAND_CONTROL_OFFSET	0x00400000
+ 
+ #define TS72XX_NAND1_BUSY_PHYS_BASE	0x60800000
+ #define TS72XX_NAND2_BUSY_PHYS_BASE	0x70800000
  #define TS72XX_NAND_BUSY_VIRT_BASE	0xfebfa000
  #define TS72XX_NAND_BUSY_SIZE		0x00001000
- 
 -
++#define TS72XX_NAND_BUSY_OFFSET	0x00800000
+ 
  #define TS72XX_RTC_INDEX_VIRT_BASE	0xfebf9000
  #define TS72XX_RTC_INDEX_PHYS_BASE	0x10800000
- #define TS72XX_RTC_INDEX_SIZE		0x00001000
-@@ -68,6 +78,61 @@
+@@ -68,23 +82,92 @@
  #define TS72XX_RTC_DATA_PHYS_BASE	0x11700000
  #define TS72XX_RTC_DATA_SIZE		0x00001000
  
@@ -258,6 +306,15 @@ index 34ddec0..3408551 100644
 +#define TS72XX_MAX197_SAMPLE_PHYS_BASE	0x10f00000
 +#define TS72XX_MAX197_SAMPLE_SIZE	0x00001000
 +
++#define TS72XX_RS485_AUTO485FD         1
++#define TS72XX_RS485_AUTO485HD         2
++#define TS72XX_RS485_MODE_RS232     0x00
++#define TS72XX_RS485_MODE_FD        0x01
++#define TS72XX_RS485_MODE_9600_HD   0x04
++#define TS72XX_RS485_MODE_19200_HD  0x05
++#define TS72XX_RS485_MODE_57600_HD  0x06
++#define TS72XX_RS485_MODE_115200_HD 0x07
++
 +
 +#define TS72XX_PC104_8BIT_IO_VIRT_BASE  0xfebf0000
 +#define TS72XX_PC104_8BIT_IO_PHYS_BASE  0x11e00000
@@ -288,7 +345,32 @@ index 34ddec0..3408551 100644
  
  #ifndef __ASSEMBLY__
  #include <linux/io.h>
-@@ -98,4 +163,21 @@ static inline int is_ts9420_installed(void)
+ 
+ static inline int board_is_ts7200(void)
+ {
+-	return __raw_readb(TS72XX_MODEL_VIRT_BASE) == TS72XX_MODEL_TS7200;
++	return __raw_readb(TS72XX_MODEL_VIRT_BASE) == TS7XXX_MODEL_TS7200;
+ }
+ 
+ static inline int board_is_ts7250(void)
+ {
+-	return __raw_readb(TS72XX_MODEL_VIRT_BASE) == TS72XX_MODEL_TS7250;
++	return __raw_readb(TS72XX_MODEL_VIRT_BASE) == TS7XXX_MODEL_TS7250;
+ }
+ 
+ static inline int board_is_ts7260(void)
+ {
+-	return __raw_readb(TS72XX_MODEL_VIRT_BASE) == TS72XX_MODEL_TS7260;
++	return __raw_readb(TS72XX_MODEL_VIRT_BASE) == TS7XXX_MODEL_TS7260;
++}
++
++static inline int board_is_ts7400(void)
++{
++	return (__raw_readb(TS72XX_MODEL_VIRT_BASE) & 0xF) == TS7XXX_MODEL_TS7400;
+ }
+ 
+ static inline int is_max197_installed(void)
+@@ -98,4 +181,21 @@ static inline int is_ts9420_installed(void)
  	return !!(__raw_readb(TS72XX_OPTIONS2_VIRT_BASE) &
  					TS72XX_OPTIONS2_TS9420);
  }

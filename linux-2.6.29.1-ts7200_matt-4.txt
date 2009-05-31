@@ -1,4 +1,4 @@
-Release notes about "linux-2.6.29.1-ts7200_matt-3" patch
+Release notes about "linux-2.6.29.1-ts7200_matt-4" patch
 This is mainly created for EP9301 & EP9302 CPUs and more especially for TS-7200, TS-7250 & TS-7260
 SBCs manufactured by Technologic Systems (http://www.embeddedarm.com).
 
@@ -171,6 +171,18 @@ $ INSTALL_MOD_PATH=/your-path-to/nfsroot make modules_install
     $ cat /proc/cpuinfo | grep MIPS            $ cat /proc/cpuinfo | grep MIPS
     BogoMIPS        : 20.68                    BogoMIPS        : 82.73
 
+    Note: It seems that only hclk (and not fclk) is important for power saving:
+    $ echo userspace > scaling_governor
+    $ echo 165888 > scaling_setspeed 
+    // (hclk=66.4MHz) I get 338mA on my TS-7200...
+
+    $ echo 165887 > scaling_setspeed 
+    // (hclk=33.2MHz) I get 287mA on my TS-7200...
+
+    $ echo 73728 > scaling_setspeed 
+    // (hclk=59.0Mhz) I get 328mA on my TS-7200...
+
+
   # PWM driver(module named ep93xx_pwm.ko). EP93XX has got two channels (range is 225Hz to 14745600Hz)
     On TS-72xx machine I enable PWM1 which is available through header (DIO_6)
     Note: PWM1 is multiplexed with port B bit 6 GPIO (EGPIO[14])
@@ -184,7 +196,7 @@ $ INSTALL_MOD_PATH=/your-path-to/nfsroot make modules_install
     555 Hz
 
     $ echo 0 > /sys/devices/platform/ep93xx-pwm.1/cycle 
-    cat /sys/devices/platform/ep93xx-pwm.1/cycle 
+    $ cat /sys/devices/platform/ep93xx-pwm.1/cycle 
     disabled
 
     $ echo 1234567 > /sys/devices/platform/ep93xx-pwm.1/cycle
@@ -197,7 +209,7 @@ $ INSTALL_MOD_PATH=/your-path-to/nfsroot make modules_install
 
   # TMP124 spi slave driver (module named tmp124.ko). This an "3-wire SPI" device (miso and mosi shares the same pin).
     Cirrus IP can only handle regular 4-wire SPI. Due to TS-7200 hardware, it's only read only (read sensor).
-    One entry is exported in sysfs.
+    One entry is exported in sysfs. Chip select pin is FGPIO[2] (EP93XX_GPIO_LINE_MCCD2).
 
     $ cat /sys/bus/spi/devices/spi1.0/temperature
     28.56
@@ -213,7 +225,7 @@ $ INSTALL_MOD_PATH=/your-path-to/nfsroot make modules_install
     Print some information about the board.
 
     $ cat /proc/driver/sbcinfo 
-    Model             : TS-7200 (PLD rev C)
+    Model             : TS-7200 (CPU rev D1) (PLD rev C)
     Option max197 A/D : yes
     Option RS-485     : no
     Jumpers           : JP2=y JP3=y JP4=n JP5=n JP6=n
@@ -251,6 +263,18 @@ $ INSTALL_MOD_PATH=/your-path-to/nfsroot make modules_install
 
 ChangeLog
 =========
+linux-2.6.29.1-ts7200_matt-4 (2009.jun.01)
+
+	* ts72xx_base: applied #5527/1 (from Hartley Sweeten)
+	  http://www.arm.linux.org.uk/developer/patches/viewpatch.php?id=5527/1
+	  Also added more definitions (MODEL, NAND, RS485) in ts72xx.h, thanks to Daniel Smolik.
+	* ep93xx_spi: added missing clk_put in remove function
+	* ep93xx_pwm: added missing clk_put in remove function
+	* ts72xx_sbcinfo: uses "board_is_ts7XXX" macros to be more portable ; added CPU revision
+	* ep93xx_cpufreq: fixed regression (set correctly policy->min and policy->max) ; some minor rework
+	* ts72xx_ts_eth100: fix trailing whitespace (Kconfig)
+	* ts72{00,xx}_eabi_full_defconfig: removed CONFIG_CPU_FREQ (because power saving is not significant)
+
 linux-2.6.29.1-ts7200_matt-3 (2009.may.21)
 
 	+ ep93xx_pwm: new platform driver
