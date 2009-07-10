@@ -1,7 +1,7 @@
-From 45bc70f191f1fbd7cfc03370337567f6d607790b Mon Sep 17 00:00:00 2001
+From 20954f4b369967b5ea3f6b3785fbc4bd6e6ec033 Mon Sep 17 00:00:00 2001
 From: Matthieu Crapet <mcrapet@gmail.com>
 Date: Sun, 5 Apr 2009 14:36:50 +0200
-Subject: [PATCH 15/23] ts72xx_pata
+Subject: [PATCH 15/25] ts72xx_pata
 
 ---
  drivers/ata/Kconfig          |   20 ++++++
@@ -405,5 +405,5 @@ index 0000000..b7348d2
 +MODULE_LICENSE("GPL");
 +MODULE_VERSION(DRV_VERSION);
 -- 
-1.6.2.1
+1.6.3.3
 

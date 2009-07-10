@@ -1,7 +1,7 @@
-From 821d744d46addd29b09ac36d585537688febb622 Mon Sep 17 00:00:00 2001
+From e2bf36c709d5d8a056b3b184eed2816f1a9ddcdb Mon Sep 17 00:00:00 2001
 From: Matthieu Crapet <mcrapet@gmail.com>
 Date: Sun, 5 Apr 2009 14:31:18 +0200
-Subject: [PATCH 14/23] ts72xx_console
+Subject: [PATCH 14/25] ts72xx_console
 
 ---
  drivers/video/console/Kconfig      |   21 ++
@@ -485,5 +485,5 @@ index 0000000..726085f
 +module_init(ts72xx_lcd_init);
 +module_exit(ts72xx_lcd_exit);
 -- 
-1.6.2.1
+1.6.3.3
 

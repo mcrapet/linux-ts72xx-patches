@@ -1,7 +1,7 @@
-From 75da80d3830727f0ee5de5a0b31432bd830acce0 Mon Sep 17 00:00:00 2001
+From 92168060cf953c7ded721a708641b7f33b2ce269 Mon Sep 17 00:00:00 2001
 From: Matthieu Crapet <mcrapet@gmail.com>
 Date: Sun, 5 Apr 2009 14:17:47 +0200
-Subject: [PATCH 10/23] ts72xx_wdt
+Subject: [PATCH 10/25] ts72xx_wdt
 
 ---
  arch/arm/mach-ep93xx/ts72xx.c |   24 +++
@@ -427,5 +427,5 @@ index 0000000..7cbac78
 +MODULE_LICENSE("GPL");
 +MODULE_ALIAS_MISCDEV(WATCHDOG_MINOR);
 -- 
-1.6.2.1
+1.6.3.3
 

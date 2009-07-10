@@ -1,4 +1,5 @@
- arch/arm/Kconfig                                  |   17 +-
+ arch/arm/Kconfig                                  |   14 +-
+ arch/arm/include/asm/ioctls.h                     |    3 +
  arch/arm/include/asm/memory.h                     |    2 +
  arch/arm/kernel/crunch.c                          |   13 +-
  arch/arm/kernel/head.S                            |    3 +
@@ -48,8 +49,9 @@
  drivers/net/ax88796.c                             |    4 +
  drivers/net/ax88796_ts_eth100.c                   |  184 ++++++++
  drivers/serial/8250_ts_ser1.c                     |  148 ++++++
- drivers/serial/Kconfig                            |   17 +
+ drivers/serial/Kconfig                            |   25 +
  drivers/serial/Makefile                           |    1 +
+ drivers/serial/amba-pl010.c                       |  135 ++++++-
  drivers/spi/Kconfig                               |   13 +
  drivers/spi/Makefile                              |    2 +
  drivers/spi/spi_ep93xx.c                          |  497 +++++++++++++++++++++
@@ -61,13 +63,10 @@
  drivers/watchdog/Kconfig                          |   12 +
  drivers/watchdog/Makefile                         |    1 +
  drivers/watchdog/ts72xx_wdt.c                     |  332 ++++++++++++++
- include/linux/mmzone.h                            |   26 ++
- mm/mmzone.c                                       |   15 +
- mm/vmstat.c                                       |   19 +-
- 66 files changed, 4981 insertions(+), 145 deletions(-)
+ 65 files changed, 5076 insertions(+), 133 deletions(-)
 
 diff --git a/arch/arm/Kconfig b/arch/arm/Kconfig
-index dbfdf87..d1f5301 100644
+index dbfdf87..c9e1e08 100644
 --- a/arch/arm/Kconfig
 +++ b/arch/arm/Kconfig
 @@ -268,6 +268,7 @@ config ARCH_EP93XX
@@ -78,19 +77,7 @@ index dbfdf87..d1f5301 100644
  	select GENERIC_GPIO
  	select HAVE_CLK
  	select COMMON_CLKDEV
-@@ -891,10 +892,9 @@ config OABI_COMPAT
- 	  UNPREDICTABLE (in fact it can be predicted that it won't work
- 	  at all). If in doubt say Y.
- 
--config ARCH_FLATMEM_HAS_HOLES
-+config ARCH_HAS_HOLES_MEMORYMODEL
- 	bool
- 	default y
--	depends on FLATMEM
- 
- # Discontigmem is deprecated
- config ARCH_DISCONTIGMEM_ENABLE
-@@ -1086,7 +1086,7 @@ endmenu
+@@ -1086,7 +1087,7 @@ endmenu
  
  menu "CPU Power Management"
  
@@ -99,7 +86,7 @@ index dbfdf87..d1f5301 100644
  
  source "drivers/cpufreq/Kconfig"
  
-@@ -1120,6 +1120,17 @@ config CPU_FREQ_IMX
+@@ -1120,6 +1121,17 @@ config CPU_FREQ_IMX
  
  	  If in doubt, say N.
  
@@ -117,6 +104,20 @@ index dbfdf87..d1f5301 100644
  config CPU_FREQ_PXA
  	bool
  	depends on CPU_FREQ && ARCH_PXA && PXA25x
+diff --git a/arch/arm/include/asm/ioctls.h b/arch/arm/include/asm/ioctls.h
+index a91d8a1..a4b60ae 100644
+--- a/arch/arm/include/asm/ioctls.h
++++ b/arch/arm/include/asm/ioctls.h
+@@ -70,6 +70,9 @@
+ #define TIOCGICOUNT	0x545D	/* read serial port inline interrupt counts */
+ #define FIOQSIZE	0x545E
+ 
++#define TIOC_SBCC485	0x545F /* TS72xx RTS/485 mode clear */
++#define TIOC_SBCS485	0x5460 /* TS72xx RTS/485 mode set */
++
+ /* Used for packet mode */
+ #define TIOCPKT_DATA		 0
+ #define TIOCPKT_FLUSHREAD	 1
 diff --git a/arch/arm/include/asm/memory.h b/arch/arm/include/asm/memory.h
 index 0202a7c..67daae5 100644
 --- a/arch/arm/include/asm/memory.h
@@ -4546,7 +4547,7 @@ index 0000000..054a8e2
 +MODULE_LICENSE("GPL");
 +MODULE_VERSION("0.3");
 diff --git a/drivers/serial/Kconfig b/drivers/serial/Kconfig
-index 7d7f576..eb4db13 100644
+index 7d7f576..e2ddaef 100644
 --- a/drivers/serial/Kconfig
 +++ b/drivers/serial/Kconfig
 @@ -275,6 +275,23 @@ config SERIAL_8250_RM9K
@@ -4573,6 +4574,21 @@ index 7d7f576..eb4db13 100644
  comment "Non-8250 serial port support"
  
  config SERIAL_AMBA_PL010
+@@ -304,6 +321,14 @@ config SERIAL_AMBA_PL010_CONSOLE
+ 	  your boot loader (lilo or loadlin) about how to pass options to the
+ 	  kernel at boot time.)
+ 
++config SERIAL_AMBA_PL010_TS72XX
++	bool "Support for RS-485 on AMBA serial port (for TS-72XX SBC)"
++	depends on SERIAL_AMBA_PL010 != n && MACH_TS72XX
++	help
++	  This add support for RS-485 on some Technologic System SBC.
++
++	  If unsure, say N.
++
+ config SERIAL_AMBA_PL011
+ 	tristate "ARM AMBA PL011 serial port support"
+ 	depends on ARM_AMBA
 diff --git a/drivers/serial/Makefile b/drivers/serial/Makefile
 index 8844c0a..ade333f 100644
 --- a/drivers/serial/Makefile
@@ -4585,6 +4601,180 @@ index 8844c0a..ade333f 100644
  obj-$(CONFIG_SERIAL_AMBA_PL010) += amba-pl010.o
  obj-$(CONFIG_SERIAL_AMBA_PL011) += amba-pl011.o
  obj-$(CONFIG_SERIAL_CLPS711X) += clps711x.o
+diff --git a/drivers/serial/amba-pl010.c b/drivers/serial/amba-pl010.c
+index e3a5ad5..d42169b 100644
+--- a/drivers/serial/amba-pl010.c
++++ b/drivers/serial/amba-pl010.c
+@@ -50,6 +50,10 @@
+ 
+ #include <asm/io.h>
+ 
++#if defined(CONFIG_SERIAL_AMBA_PL010_TS72XX)
++#include <mach/hardware.h>
++#endif
++
+ #define UART_NR		8
+ 
+ #define SERIAL_AMBA_MAJOR	204
+@@ -64,6 +68,12 @@
+ #define UART_DUMMY_RSR_RX	256
+ #define UART_PORT_SIZE		64
+ 
++#if defined(CONFIG_SERIAL_AMBA_PL010_TS72XX)
++static void __iomem *ts_rs485_data9_register;
++static void __iomem *ts_rs485_control_register;
++#endif
++
++
+ /*
+  * We wrap our port structure around the generic uart_port.
+  */
+@@ -519,6 +529,107 @@ static int pl010_verify_port(struct uart_port *port, struct serial_struct *ser)
+ 	return ret;
+ }
+ 
++
++#if defined(CONFIG_SERIAL_AMBA_PL010_TS72XX)
++static int ts72xx_rs485_init(void)
++{
++  ts_rs485_data9_register = ioremap(TS72XX_RS485_MODE_PHYS_BASE, 4096);
++  if (ts_rs485_data9_register == NULL) {
++    return -1;
++  }
++
++  ts_rs485_control_register = ioremap(TS72XX_RS485_CONTROL_PHYS_BASE, 4096);
++  if (ts_rs485_control_register == NULL) {
++    iounmap(ts_rs485_data9_register);
++    return -1;
++  }
++
++  return 0;
++}
++
++static int ts72xx_auto485(struct uart_port *port, unsigned int cmd, unsigned long *arg)
++{
++  int baud, cflag, mode;
++  int datalength;
++
++  mode = (int)*arg;
++  if (!is_rs485_installed()) {
++    printk("amba-pl010.c: this board does not support RS485 auto mode\n");
++    return -EINVAL;
++  }
++
++  if (port->line != 1) {
++    printk("amba-pl010.c: auto RS485 mode is only supported on second port (/dev/ttyAM1)\n");
++    return -EINVAL;
++  }
++
++  datalength = 8;
++  cflag = port->info->port.tty->termios->c_cflag ;
++  if (cflag & PARENB)
++    datalength++;
++
++  if (cflag & CSTOPB)
++    datalength++;
++
++  baud = tty_get_baud_rate(port->info->port.tty);
++
++  switch (cmd) {
++    case TIOC_SBCC485:
++      if ((mode & TS72XX_RS485_AUTO485FD) || (mode & TS72XX_RS485_AUTO485HD)) {
++        printk("amba-pl010.c: unsetting auto RS485 mode\n");
++        __raw_writew(TS72XX_RS485_MODE_RS232, ts_rs485_control_register);
++        __raw_writew(TS72XX_RS485_MODE_RS232, ts_rs485_data9_register);
++      }
++      break;
++    case TIOC_SBCS485:
++      if (mode & TS72XX_RS485_AUTO485FD) {
++        printk ("amba-pl010.c: setting FULL duplex auto RS485 mode\n");
++        __raw_writew(TS72XX_RS485_MODE_FD, ts_rs485_control_register);
++        if (datalength > 8)
++          __raw_writew(TS72XX_RS485_MODE_FD, ts_rs485_data9_register);
++      } else if (mode & TS72XX_RS485_AUTO485HD) {
++        printk("amba-pl010.c: setting HALF DUPLEX auto RS485 mode\n");
++        switch (baud) {
++          case 9600:
++            __raw_writew(TS72XX_RS485_MODE_9600_HD, ts_rs485_control_register);
++            break;
++          case 19200:
++            __raw_writew(TS72XX_RS485_MODE_19200_HD, ts_rs485_control_register);
++            break;
++          case 57600:
++            __raw_writew(TS72XX_RS485_MODE_57600_HD, ts_rs485_control_register);
++            break;
++          case 115200:
++            __raw_writew(TS72XX_RS485_MODE_115200_HD, ts_rs485_control_register);
++            break;
++          default:
++            printk("amba-pl010.c: %d baud rate is not supported for auto RS485 mode\n", baud);
++            return -1;
++        }
++        if (datalength > 8)
++          __raw_writew(TS72XX_RS485_MODE_FD, ts_rs485_data9_register);
++      }
++      break;
++  }
++
++  return 0;
++}
++
++static int pl010_ioctl(struct uart_port *port, unsigned int cmd, unsigned long arg)
++{
++  switch (cmd) {
++    case TIOC_SBCC485:
++    case TIOC_SBCS485:
++      return ts72xx_auto485(port, cmd, (unsigned long *)arg);
++    default:
++      return -ENOIOCTLCMD;
++  }
++
++  return -ENOIOCTLCMD;
++}
++#endif /* CONFIG_SERIAL_AMBA_PL010_TS72XX */
++
++
+ static struct uart_ops amba_pl010_pops = {
+ 	.tx_empty	= pl010_tx_empty,
+ 	.set_mctrl	= pl010_set_mctrl,
+@@ -536,6 +647,9 @@ static struct uart_ops amba_pl010_pops = {
+ 	.request_port	= pl010_request_port,
+ 	.config_port	= pl010_config_port,
+ 	.verify_port	= pl010_verify_port,
++#if defined(CONFIG_SERIAL_AMBA_PL010_TS72XX)
++	.ioctl	= pl010_ioctl,
++#endif
+ };
+ 
+ static struct uart_amba_port *amba_ports[UART_NR];
+@@ -792,11 +906,22 @@ static int __init pl010_init(void)
+ 	printk(KERN_INFO "Serial: AMBA driver\n");
+ 
+ 	ret = uart_register_driver(&amba_reg);
+-	if (ret == 0) {
+-		ret = amba_driver_register(&pl010_driver);
+-		if (ret)
+-			uart_unregister_driver(&amba_reg);
+-	}
++  if (ret == 0) {
++    ret = amba_driver_register(&pl010_driver);
++
++    #if defined(CONFIG_SERIAL_AMBA_PL010_TS72XX)
++    if (!ret && is_rs485_installed()) {
++      ret = ts72xx_rs485_init();
++      if (ret)
++        printk("amba-pl010.c: ts72xx_rs485_init() failed\n");
++      else
++        printk("amba-pl010.c: auto RS485 mode initialized\n");
++    }
++    #endif
++
++    if (ret)
++      uart_unregister_driver(&amba_reg);
++  }
+ 	return ret;
+ }
+ 
 diff --git a/drivers/spi/Kconfig b/drivers/spi/Kconfig
 index 83a185d..cb1961c 100644
 --- a/drivers/spi/Kconfig
@@ -6216,101 +6406,3 @@ index 0000000..7cbac78
 +MODULE_DESCRIPTION("TS-72xx watchdog driver");
 +MODULE_LICENSE("GPL");
 +MODULE_ALIAS_MISCDEV(WATCHDOG_MINOR);
-diff --git a/include/linux/mmzone.h b/include/linux/mmzone.h
-index 1aca6ce..78fdafd 100644
---- a/include/linux/mmzone.h
-+++ b/include/linux/mmzone.h
-@@ -1095,6 +1095,32 @@ unsigned long __init node_memmap_size_bytes(int, unsigned long, unsigned long);
- #define pfn_valid_within(pfn) (1)
- #endif
- 
-+#ifdef CONFIG_ARCH_HAS_HOLES_MEMORYMODEL
-+/*
-+ * pfn_valid() is meant to be able to tell if a given PFN has valid memmap
-+ * associated with it or not. In FLATMEM, it is expected that holes always
-+ * have valid memmap as long as there is valid PFNs either side of the hole.
-+ * In SPARSEMEM, it is assumed that a valid section has a memmap for the
-+ * entire section.
-+ *
-+ * However ARM and maybe other embedded architectures in the future
-+ * free memmap backing holes to save memory on the assumption the memmap is
-+ * never used. The page_zone linkages are then broken even though pfn_valid()
-+ * returns true. A walker of the full memmap must then do this additional
-+ * check to ensure the memmap they are looking at is sane by making sure
-+ * the zone and PFN linkages are still valid. This is expensive, but walkers
-+ * of the full memmap are extremely rare.
-+ */
-+int memmap_valid_within(unsigned long pfn,
-+					struct page *page, struct zone *zone);
-+#else
-+static inline int memmap_valid_within(unsigned long pfn,
-+					struct page *page, struct zone *zone)
-+{
-+	return 1;
-+}
-+#endif /* CONFIG_ARCH_HAS_HOLES_MEMORYMODEL */
-+
- #endif /* !__GENERATING_BOUNDS.H */
- #endif /* !__ASSEMBLY__ */
- #endif /* _LINUX_MMZONE_H */
-diff --git a/mm/mmzone.c b/mm/mmzone.c
-index 16ce8b9..f5b7d17 100644
---- a/mm/mmzone.c
-+++ b/mm/mmzone.c
-@@ -6,6 +6,7 @@
- 
- 
- #include <linux/stddef.h>
-+#include <linux/mm.h>
- #include <linux/mmzone.h>
- #include <linux/module.h>
- 
-@@ -72,3 +73,17 @@ struct zoneref *next_zones_zonelist(struct zoneref *z,
- 	*zone = zonelist_zone(z);
- 	return z;
- }
-+
-+#ifdef CONFIG_ARCH_HAS_HOLES_MEMORYMODEL
-+int memmap_valid_within(unsigned long pfn,
-+					struct page *page, struct zone *zone)
-+{
-+	if (page_to_pfn(page) != pfn)
-+		return 0;
-+
-+	if (page_zone(page) != zone)
-+		return 0;
-+
-+	return 1;
-+}
-+#endif /* CONFIG_ARCH_HAS_HOLES_MEMORYMODEL */
-diff --git a/mm/vmstat.c b/mm/vmstat.c
-index 9114974..6448970 100644
---- a/mm/vmstat.c
-+++ b/mm/vmstat.c
-@@ -516,22 +516,11 @@ static void pagetypeinfo_showblockcount_print(struct seq_file *m,
- 			continue;
- 
- 		page = pfn_to_page(pfn);
--#ifdef CONFIG_ARCH_FLATMEM_HAS_HOLES
--		/*
--		 * Ordinarily, memory holes in flatmem still have a valid
--		 * memmap for the PFN range. However, an architecture for
--		 * embedded systems (e.g. ARM) can free up the memmap backing
--		 * holes to save memory on the assumption the memmap is
--		 * never used. The page_zone linkages are then broken even
--		 * though pfn_valid() returns true. Skip the page if the
--		 * linkages are broken. Even if this test passed, the impact
--		 * is that the counters for the movable type are off but
--		 * fragmentation monitoring is likely meaningless on small
--		 * systems.
--		 */
--		if (page_zone(page) != zone)
-+
-+		/* Watch for unexpected holes punched in the memmap */
-+		if (!memmap_valid_within(pfn, page, zone))
- 			continue;
--#endif
-+
- 		mtype = get_pageblock_migratetype(page);
- 
- 		if (mtype < MIGRATE_TYPES)

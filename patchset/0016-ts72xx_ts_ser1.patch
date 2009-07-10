@@ -1,7 +1,7 @@
-From a2e4c3df2fe768d2871cadb39bc239701d8894bb Mon Sep 17 00:00:00 2001
+From affe7102394ab95b28d00e698f90261873082ac5 Mon Sep 17 00:00:00 2001
 From: Matthieu Crapet <mcrapet@gmail.com>
 Date: Sun, 5 Apr 2009 14:38:00 +0200
-Subject: [PATCH 16/23] ts72xx_ts_ser1
+Subject: [PATCH 16/25] ts72xx_ts_ser1
 
 ---
  drivers/serial/8250_ts_ser1.c |  148 +++++++++++++++++++++++++++++++++++++++++
@@ -205,5 +205,5 @@ index 8844c0a..ade333f 100644
  obj-$(CONFIG_SERIAL_AMBA_PL011) += amba-pl011.o
  obj-$(CONFIG_SERIAL_CLPS711X) += clps711x.o
 -- 
-1.6.2.1
+1.6.3.3
 

@@ -1,7 +1,7 @@
-From 918d2c8f7912a6a37b18f3af18cd1764211086d0 Mon Sep 17 00:00:00 2001
+From e1ba9db4dcdf7e1a69205fee22581521444a9b58 Mon Sep 17 00:00:00 2001
 From: Matthieu Crapet <mcrapet@gmail.com>
 Date: Sun, 5 Apr 2009 13:21:54 +0200
-Subject: [PATCH 04/23] ts72xx_force_machine-id
+Subject: [PATCH 04/25] ts72xx_force_machine-id
 
 ---
  arch/arm/kernel/head.S       |    3 +++
@@ -41,5 +41,5 @@ index f06ef35..047a5cb 100644
  
  endif
 -- 
-1.6.2.1
+1.6.3.3
 

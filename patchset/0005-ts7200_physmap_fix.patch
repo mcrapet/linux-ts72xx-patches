@@ -1,7 +1,7 @@
-From 06d0e349522dc0022f4dd1d0d34368568007c10f Mon Sep 17 00:00:00 2001
+From f8f51d0842f5308039ef57bd114919783cbd5b4e Mon Sep 17 00:00:00 2001
 From: Matthieu Crapet <mcrapet@gmail.com>
 Date: Sun, 5 Apr 2009 13:36:50 +0200
-Subject: [PATCH 05/23] ts7200_physmap_fix
+Subject: [PATCH 05/25] ts7200_physmap_fix
 
 ---
  arch/arm/mach-ep93xx/ts72xx.c |   10 ++++++++--
@@ -50,5 +50,5 @@ index 3dbae74..fd5c7fa 100644
  
  	ep93xx_register_eth(&ts72xx_eth_data, 1);
 -- 
-1.6.2.1
+1.6.3.3
 

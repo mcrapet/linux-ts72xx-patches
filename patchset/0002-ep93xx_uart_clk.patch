@@ -1,7 +1,7 @@
 From f251f8ac2d790907373f651421ee20f1848afbfa Mon Sep 17 00:00:00 2001
 From: Matthieu Crapet <mcrapet@gmail.com>
 Date: Sun, 5 Apr 2009 10:21:23 +0200
-Subject: [PATCH 02/23] ep93xx_uart_clk
+Subject: [PATCH 02/25] ep93xx_uart_clk
 
 ---
  arch/arm/mach-ep93xx/clock.c |   69 +++++++++++++++++++++++++++++++++++++-----
@@ -144,5 +144,5 @@ index 9604928..bc71ef3 100644
  		clk_pll2.rate = calc_pll_rate(value);
  	} else {
 -- 
-1.6.2.1
+1.6.3.3
 

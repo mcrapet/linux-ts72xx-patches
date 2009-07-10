@@ -1,7 +1,7 @@
-From ec9d07daaf9e960c9da44fc83072a3491e39b481 Mon Sep 17 00:00:00 2001
+From 3c0e2a45c45b6e85ce195cc74ac2237fff6cfff3 Mon Sep 17 00:00:00 2001
 From: Matthieu Crapet <mcrapet@gmail.com>
 Date: Sun, 5 Apr 2009 14:22:23 +0200
-Subject: [PATCH 12/23] ts72xx_max197
+Subject: [PATCH 12/25] ts72xx_max197
 
 ---
  arch/arm/mach-ep93xx/ts72xx.c |   29 +++++
@@ -341,5 +341,5 @@ index 0000000..f989de6
 +module_init(ts72xx_max197_init);
 +module_exit(ts72xx_max197_exit);
 -- 
-1.6.2.1
+1.6.3.3
 

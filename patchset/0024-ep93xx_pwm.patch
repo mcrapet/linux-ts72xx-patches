@@ -1,7 +1,7 @@
-From 259c9a7c6bb4ad109643a14e1e31f7ae979d8d45 Mon Sep 17 00:00:00 2001
+From c6b26015f25002145a314644016332a2a5df78c3 Mon Sep 17 00:00:00 2001
 From: Matthieu Crapet <mcrapet@gmail.com>
 Date: Thu, 21 May 2009 12:20:33 +0200
-Subject: [PATCH 25/25] ep93xx_pwm
+Subject: [PATCH 24/25] ep93xx_pwm
 
 - now use correctly IS_ERR, PTR_ERR
 - added missing clk_put in remove function
@@ -370,5 +370,5 @@ index 0000000..82fa596
 +MODULE_LICENSE("GPL");
 +MODULE_VERSION("0.11");
 -- 
-1.6.2.1
+1.6.3.3
 

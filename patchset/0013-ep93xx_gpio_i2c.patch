@@ -1,14 +1,14 @@
-From 96b648ff41b69bbff244cef37789143c1e2ea643 Mon Sep 17 00:00:00 2001
+From 7ada5e391bbead44808ae6f789c72ec640d2abd7 Mon Sep 17 00:00:00 2001
 From: Matthieu Crapet <mcrapet@gmail.com>
 Date: Sun, 5 Apr 2009 14:30:14 +0200
-Subject: [PATCH 13/23] ep93xx_gpio_i2c
+Subject: [PATCH 13/25] ep93xx_gpio_i2c
 
 ---
  arch/arm/mach-ep93xx/core.c |   12 ++++++++++++
  1 files changed, 12 insertions(+), 0 deletions(-)
 
 diff --git a/arch/arm/mach-ep93xx/core.c b/arch/arm/mach-ep93xx/core.c
-index 41a81ff..b204808 100644
+index 0f5fc28..33f30bc 100644
 --- a/arch/arm/mach-ep93xx/core.c
 +++ b/arch/arm/mach-ep93xx/core.c
 @@ -37,6 +37,8 @@
@@ -45,5 +45,5 @@ index 41a81ff..b204808 100644
  static struct platform_device ep93xx_i2c_device = {
  	.name			= "i2c-gpio",
 -- 
-1.6.2.1
+1.6.3.3
 

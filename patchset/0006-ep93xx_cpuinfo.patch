@@ -1,7 +1,7 @@
-From 287be9496cb4d7328de82bca05ac84710211980f Mon Sep 17 00:00:00 2001
+From b8a82e9f79171e7ba744f9d020c21ce43f97ad01 Mon Sep 17 00:00:00 2001
 From: Matthieu Crapet <mcrapet@gmail.com>
 Date: Sun, 5 Apr 2009 13:39:50 +0200
-Subject: [PATCH 06/23] ep93xx_cpuinfo
+Subject: [PATCH 06/25] ep93xx_cpuinfo
 
 ---
  arch/arm/kernel/setup.c |    8 ++++++++
@@ -30,5 +30,5 @@ index 68d6494..956634a 100644
  	return 0;
  }
 -- 
-1.6.2.1
+1.6.3.3
 

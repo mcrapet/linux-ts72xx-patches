@@ -1,4 +1,4 @@
-From a741afb42ff2213ffaea60895501ce76d41113d1 Mon Sep 17 00:00:00 2001
+From f379cbe2e0347b7c0f363533a0ca6ddf28063ecc Mon Sep 17 00:00:00 2001
 From: Matthieu Crapet <mcrapet@gmail.com>
 Date: Sun, 5 Apr 2009 15:10:30 +0200
 Subject: [PATCH 22/25] ts7200_cf_ide
@@ -107,5 +107,5 @@ index 0000000..f646367
 +MODULE_LICENSE("GPL");
 +MODULE_VERSION("0.1");
 -- 
-1.6.2.1
+1.6.3.3
 

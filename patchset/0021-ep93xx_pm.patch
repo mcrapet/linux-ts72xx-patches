@@ -1,7 +1,7 @@
-From 41409181bc7070b93e951d8c39ac279efb2515fd Mon Sep 17 00:00:00 2001
+From 80e1171a26e5c4464a5456bbc3e89cf9c04ed7dc Mon Sep 17 00:00:00 2001
 From: Matthieu Crapet <mcrapet@gmail.com>
 Date: Sun, 5 Apr 2009 15:03:38 +0200
-Subject: [PATCH 21/23] ep93xx_pm
+Subject: [PATCH 21/25] ep93xx_pm
 
 ---
  arch/arm/mach-ep93xx/Makefile |    3 ++
@@ -104,5 +104,5 @@ index 0000000..7fe8e4e
 +}
 +__initcall(ep93xx_pm_init);
 -- 
-1.6.2.1
+1.6.3.3
 

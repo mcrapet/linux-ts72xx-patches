@@ -1,7 +1,7 @@
-From 1b65a337b262ec94eb340ad36f944b5d48da1783 Mon Sep 17 00:00:00 2001
+From 1efe246ef3b56d611c375ba67f714d902e585fe5 Mon Sep 17 00:00:00 2001
 From: Matthieu Crapet <mcrapet@gmail.com>
 Date: Sun, 5 Apr 2009 14:39:19 +0200
-Subject: [PATCH 17/23] ts72xx_dio_keypad
+Subject: [PATCH 17/25] ts72xx_dio_keypad
 
 ---
  arch/arm/mach-ep93xx/include/mach/ep93xx-keypad.h |   30 +++
@@ -556,5 +556,5 @@ index 0000000..c536003
 +MODULE_DESCRIPTION("Platform device 4x4 keypad");
 +MODULE_LICENSE("GPL");
 -- 
-1.6.2.1
+1.6.3.3
 

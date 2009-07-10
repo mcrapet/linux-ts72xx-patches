@@ -1,7 +1,7 @@
 From 2aeec21c1d98e65ef33f9b96aa2d6b05c7ed9dc0 Mon Sep 17 00:00:00 2001
 From: Matthieu Crapet <mcrapet@gmail.com>
 Date: Sun, 5 Apr 2009 10:16:53 +0200
-Subject: [PATCH 01/23] ep93xx_syscon_devcfg
+Subject: [PATCH 01/25] ep93xx_syscon_devcfg
 
 ---
  arch/arm/kernel/crunch.c                        |   13 +++++--
@@ -199,5 +199,5 @@ index 67789d0..8ffbe53 100644
  	while (1)
  		;
 -- 
-1.6.2.1
+1.6.3.3
 
