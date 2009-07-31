@@ -1,4 +1,4 @@
-From 3f640a3c98d227713e4483efc021b78fa9c96d7f Mon Sep 17 00:00:00 2001
+From d445c6de4a8539e476c07bb8e66e7db6a57ef710 Mon Sep 17 00:00:00 2001
 From: Matthieu Crapet <mcrapet@gmail.com>
 Date: Sun, 5 Apr 2009 13:40:46 +0200
 Subject: [PATCH 07/25] ts72xx_sbcinfo
@@ -58,7 +58,7 @@ index fd5c7fa..27f47a2 100644
  		.pfn		= __phys_to_pfn(TS72XX_OPTIONS_PHYS_BASE),
 diff --git a/arch/arm/mach-ep93xx/ts72xx_sbcinfo.c b/arch/arm/mach-ep93xx/ts72xx_sbcinfo.c
 new file mode 100644
-index 0000000..f2b8360
+index 0000000..9d10b29
 --- /dev/null
 +++ b/arch/arm/mach-ep93xx/ts72xx_sbcinfo.c
 @@ -0,0 +1,154 @@
@@ -82,11 +82,11 @@ index 0000000..f2b8360
 +#include <mach/hardware.h>
 +
 +struct infos {
-+  const char *cpu_rev;
-+  int model, pld;
-+  int option_ad;
-+  int option_rs485;
-+  unsigned char jumpers[6]; // 0=off,1=on,2=error
++	const char *cpu_rev;
++	int model, pld;
++	int option_ad;
++	int option_rs485;
++	unsigned char jumpers[6]; // 0=off,1=on,2=error
 +};
 +
 +static const char *revisions[] = { "A", "B", "C", "D0", "D1", "E0", "E1", "E2", "??" };
@@ -94,119 +94,119 @@ index 0000000..f2b8360
 +
 +static void get_sbcinfo(struct infos *data)
 +{
-+  void __iomem *p;
-+  short rev;
++	void __iomem *p;
++	short rev;
 +
-+  /* CPU revision */
-+  rev = __raw_readl(EP93XX_SYSCON_CHIPID) >> 28;
-+  if (rev > ARRAY_SIZE(revisions))
-+    rev = ARRAY_SIZE(revisions) - 1;
-+  data->cpu_rev = revisions[rev];
++	/* CPU revision */
++	rev = __raw_readl(EP93XX_SYSCON_CHIPID) >> 28;
++	if (rev > ARRAY_SIZE(revisions))
++		rev = ARRAY_SIZE(revisions) - 1;
++	data->cpu_rev = revisions[rev];
 +
-+  /* Board model */
-+  if (board_is_ts7200())
-+    data->model = 7200;
-+  else if (board_is_ts7250())
-+    data->model = 7250;
-+  else if (board_is_ts7260())
-+    data->model = 7260;
-+  else if (board_is_ts7400())
-+    data->model = 7400;
-+  else
-+    data->model = 0;
++	/* Board model */
++	if (board_is_ts7200())
++		data->model = 7200;
++	else if (board_is_ts7250())
++		data->model = 7250;
++	else if (board_is_ts7260())
++		data->model = 7260;
++	else if (board_is_ts7400())
++		data->model = 7400;
++	else
++		data->model = 0;
 +
-+  data->pld = get_ts72xx_pld_version();
++	data->pld = get_ts72xx_pld_version();
 +
-+  /* A/D converter (8 x 12-bit channels) */
-+  if ((data->model == 7200) || (data->model = 7250)) {
-+    data->option_ad = is_max197_installed();
-+  } else {
-+    data->option_ad = 0;
-+  }
++	/* A/D converter (8 x 12-bit channels) */
++	if ((data->model == 7200) || (data->model == 7250)) {
++		data->option_ad = is_max197_installed();
++	} else {
++		data->option_ad = 0;
++	}
 +
-+  /* COM2 RS-485 */
-+  if (is_rs485_installed()) {
-+    data->option_rs485 = 1;
-+  } else {
-+    data->option_rs485 = 0;
-+  }
++	/* COM2 RS-485 */
++	if (is_rs485_installed()) {
++		data->option_rs485 = 1;
++	} else {
++		data->option_rs485 = 0;
++	}
 +
-+  /* jumpers */
-+  p = ioremap(TS72XX_JUMPERS_MAX197_PHYS_BASE, TS72XX_JUMPERS_MAX197_SIZE);
-+  if (p) {
-+    unsigned char c = __raw_readb(p);
++	/* jumpers */
++	p = ioremap(TS72XX_JUMPERS_MAX197_PHYS_BASE, TS72XX_JUMPERS_MAX197_SIZE);
++	if (p) {
++		unsigned char c = __raw_readb(p);
 +
-+    data->jumpers[0] = 2;                // JP1 (bootstrap)
-+    data->jumpers[1] = !!(c & 0x01);     // JP2 (enable serial console)
-+    data->jumpers[2] = !!(c & 0x02);     // JP3 (flash write enable)
-+    data->jumpers[3] = !(c & 0x08);      // JP4 (console on COM2)
-+    data->jumpers[4] = !(c & 0x10);      // JP5 (test)
-+    data->jumpers[5] = !!(is_jp6_set()); // JP6 (user jumper)
++		data->jumpers[0] = 2;                // JP1 (bootstrap)
++		data->jumpers[1] = !!(c & 0x01);     // JP2 (enable serial console)
++		data->jumpers[2] = !!(c & 0x02);     // JP3 (flash write enable)
++		data->jumpers[3] = !(c & 0x08);      // JP4 (console on COM2)
++		data->jumpers[4] = !(c & 0x10);      // JP5 (test)
++		data->jumpers[5] = !!(is_jp6_set()); // JP6 (user jumper)
 +
-+    iounmap(p);
-+  } else {
-+    data->jumpers[0] = data->jumpers[1] = data->jumpers[2] = 2;
-+    data->jumpers[3] = data->jumpers[4] = data->jumpers[5] = 2;
-+  }
++		iounmap(p);
++	} else {
++		data->jumpers[0] = data->jumpers[1] = data->jumpers[2] = 2;
++		data->jumpers[3] = data->jumpers[4] = data->jumpers[5] = 2;
++	}
 +
 +}
 +
 +
 +static int ts72xx_sbcinfo_read_proc(char *buffer, char **start, off_t offset,
-+    int count, int *eof, void *data)
++		int count, int *eof, void *data)
 +{
-+  int len, size = count;
-+  char *p = buffer;
-+  struct infos nfo;
-+  const char jpc[3] = { 'n', 'y', '?' };
++	int len, size = count;
++	char *p = buffer;
++	struct infos nfo;
++	const char jpc[3] = { 'n', 'y', '?' };
 +
-+  get_sbcinfo(&nfo);
-+  len = scnprintf(p, size,
-+      "Model             : TS-%d (CPU rev %s) (PLD rev %c)\n"
-+      "Option max197 A/D : %s\n"
-+      "Option RS-485     : %s\n"
-+      "Jumpers           : JP2=%c JP3=%c JP4=%c JP5=%c JP6=%c\n",
-+      nfo.model, nfo.cpu_rev, nfo.pld + 0x40,
-+      (nfo.option_ad ? "yes" : "no"),
-+      (nfo.option_rs485 ? "yes" : "no"),
-+      jpc[nfo.jumpers[1]], jpc[nfo.jumpers[2]], jpc[nfo.jumpers[3]], jpc[nfo.jumpers[4]],
-+      jpc[nfo.jumpers[5]]);
++	get_sbcinfo(&nfo);
++	len = scnprintf(p, size,
++			"Model             : TS-%d (CPU rev %s) (PLD rev %c)\n"
++			"Option max197 A/D : %s\n"
++			"Option RS-485     : %s\n"
++			"Jumpers           : JP2=%c JP3=%c JP4=%c JP5=%c JP6=%c\n",
++			nfo.model, nfo.cpu_rev, nfo.pld + 0x40,
++			(nfo.option_ad ? "yes" : "no"),
++			(nfo.option_rs485 ? "yes" : "no"),
++			jpc[nfo.jumpers[1]], jpc[nfo.jumpers[2]], jpc[nfo.jumpers[3]], jpc[nfo.jumpers[4]],
++			jpc[nfo.jumpers[5]]);
 +
-+  if (len <= offset + count)
-+    *eof = 1;
++	if (len <= offset + count)
++		*eof = 1;
 +
-+  *start = buffer + offset;
-+  len -= offset;
++	*start = buffer + offset;
++	len -= offset;
 +
-+  if (len > count)
-+    len = count;
-+  if (len < 0)
-+    len = 0;
++	if (len > count)
++		len = count;
++	if (len < 0)
++		len = 0;
 +
-+  return len;
++	return len;
 +}
 +
 +
 +static int __init ts72xx_sbcinfo_init(void)
 +{
-+  struct proc_dir_entry *entry;
-+  int ret = 0;
++	struct proc_dir_entry *entry;
++	int ret = 0;
 +
-+  entry = create_proc_read_entry("driver/sbcinfo", 0,
-+      NULL, ts72xx_sbcinfo_read_proc, NULL);
++	entry = create_proc_read_entry("driver/sbcinfo", 0,
++			NULL, ts72xx_sbcinfo_read_proc, NULL);
 +
-+  if (!entry) {
-+    printk(KERN_ERR "sbcinfo: can't create /proc/driver/sbcinfo\n");
-+    ret = -ENOMEM;
-+  }
++	if (!entry) {
++		printk(KERN_ERR "sbcinfo: can't create /proc/driver/sbcinfo\n");
++		ret = -ENOMEM;
++	}
 +
-+  return ret;
++	return ret;
 +}
 +
 +static void __exit ts72xx_sbcinfo_exit(void)
 +{
-+  remove_proc_entry("driver/sbcinfo", NULL);
-+  return;
++	remove_proc_entry("driver/sbcinfo", NULL);
++	return;
 +}
 +
 +module_init(ts72xx_sbcinfo_init);
@@ -215,7 +215,7 @@ index 0000000..f2b8360
 +MODULE_AUTHOR("Matthieu Crapet <mcrapet@gmail.com>");
 +MODULE_DESCRIPTION("Show information of Technologic Systems TS-72XX sbc");
 +MODULE_LICENSE("GPL");
-+MODULE_VERSION("1.01");
++MODULE_VERSION("1.02");
 -- 
 1.6.3.3
 

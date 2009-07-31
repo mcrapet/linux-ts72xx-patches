@@ -7,18 +7,17 @@
  arch/arm/mach-ep93xx/Kconfig                      |   23 +
  arch/arm/mach-ep93xx/Makefile                     |    6 +
  arch/arm/mach-ep93xx/clock.c                      |   77 +++-
- arch/arm/mach-ep93xx/core.c                       |  127 +++++-
+ arch/arm/mach-ep93xx/core.c                       |  212 ++++++++-
  arch/arm/mach-ep93xx/cpufreq.c                    |  290 ++++++++++++
  arch/arm/mach-ep93xx/include/mach/ep93xx-keypad.h |   30 ++
- arch/arm/mach-ep93xx/include/mach/ep93xx-regs.h   |   53 +++-
+ arch/arm/mach-ep93xx/include/mach/ep93xx-regs.h   |   45 ++-
  arch/arm/mach-ep93xx/include/mach/memory.h        |   28 ++
- arch/arm/mach-ep93xx/include/mach/platform.h      |   13 +
+ arch/arm/mach-ep93xx/include/mach/platform.h      |   18 +
  arch/arm/mach-ep93xx/include/mach/spi.h           |   18 +
  arch/arm/mach-ep93xx/include/mach/system.h        |   12 +-
- arch/arm/mach-ep93xx/include/mach/ts72xx.h        |  116 +++++-
- arch/arm/mach-ep93xx/include/mach/uncompress.h    |   65 +++
+ arch/arm/mach-ep93xx/include/mach/ts72xx.h        |  126 +++++-
  arch/arm/mach-ep93xx/pm.c                         |   77 ++++
- arch/arm/mach-ep93xx/ts72xx.c                     |  145 ++++++-
+ arch/arm/mach-ep93xx/ts72xx.c                     |  143 ++++++-
  arch/arm/mach-ep93xx/ts72xx_sbcinfo.c             |  154 +++++++
  arch/arm/mm/proc-arm920.S                         |    5 +-
  drivers/ata/Kconfig                               |   20 +
@@ -34,9 +33,9 @@
  drivers/input/keyboard/ep93xx-keypad.c            |  291 ++++++++++++
  drivers/input/keyboard/ts72xx_dio_3x4.c           |   65 +++
  drivers/input/keyboard/ts72xx_dio_4x4.c           |   65 +++
- drivers/misc/Kconfig                              |   28 ++
+ drivers/misc/Kconfig                              |   34 ++
  drivers/misc/Makefile                             |    2 +
- drivers/misc/ep93xx_pwm.c                         |  260 +++++++++++
+ drivers/misc/ep93xx_pwm.c                         |  384 ++++++++++++++++
  drivers/misc/ts72xx_max197.c                      |  235 ++++++++++
  drivers/mtd/maps/Kconfig                          |    8 +
  drivers/mtd/maps/Makefile                         |    2 +
@@ -63,7 +62,7 @@
  drivers/watchdog/Kconfig                          |   12 +
  drivers/watchdog/Makefile                         |    1 +
  drivers/watchdog/ts72xx_wdt.c                     |  332 ++++++++++++++
- 65 files changed, 5076 insertions(+), 133 deletions(-)
+ 64 files changed, 5229 insertions(+), 135 deletions(-)
 
 diff --git a/arch/arm/Kconfig b/arch/arm/Kconfig
 index dbfdf87..c9e1e08 100644
@@ -265,7 +264,7 @@ index 944e42d..532f14f 100644
 +# Power Management
 +obj-$(CONFIG_PM) += pm.o
 diff --git a/arch/arm/mach-ep93xx/clock.c b/arch/arm/mach-ep93xx/clock.c
-index 9604928..fe8efc6 100644
+index 9604928..c4ce0fb 100644
 --- a/arch/arm/mach-ep93xx/clock.c
 +++ b/arch/arm/mach-ep93xx/clock.c
 @@ -21,15 +21,56 @@
@@ -344,7 +343,7 @@ index 9604928..fe8efc6 100644
  	INIT_CK(NULL, "pll2", &clk_pll2),
  	INIT_CK(NULL, "usb_host", &clk_usb_host),
 +	INIT_CK(NULL, "sspclk", &clk_ssp),
-+	INIT_CK(NULL, "pwmclk", &clk_pwm),
++	INIT_CK(NULL, "pwm_clk", &clk_pwm),
  };
  
  
@@ -415,7 +414,7 @@ index 9604928..fe8efc6 100644
  		clk_pll2.rate = calc_pll_rate(value);
  	} else {
 diff --git a/arch/arm/mach-ep93xx/core.c b/arch/arm/mach-ep93xx/core.c
-index 6d9152d..7983a3b 100644
+index 6d9152d..445ef0d 100644
 --- a/arch/arm/mach-ep93xx/core.c
 +++ b/arch/arm/mach-ep93xx/core.c
 @@ -36,11 +36,15 @@
@@ -467,7 +466,7 @@ index 6d9152d..7983a3b 100644
  		EP93XX_GPIO_REG(int_debounce_register_offset[port]));
  }
  EXPORT_SYMBOL(ep93xx_gpio_int_debounce);
-@@ -385,6 +389,41 @@ void __init ep93xx_init_irq(void)
+@@ -385,6 +389,126 @@ void __init ep93xx_init_irq(void)
  
  
  /*************************************************************************
@@ -506,10 +505,95 @@ index 6d9152d..7983a3b 100644
 +
 +
 +/*************************************************************************
++ * EP93xx pwm peripheral handling
++ *************************************************************************/
++static struct resource ep93xx_pwm0_resource[] = {
++	{
++		.start	= EP93XX_PWM_PHYS_BASE,
++		.end	= EP93XX_PWM_PHYS_BASE + 0x10 - 1,
++		.flags	= IORESOURCE_MEM,
++	},
++};
++
++static struct platform_device ep93xx_pwm0_device = {
++	.name		= "ep93xx-pwm",
++	.id		= 0,
++	.num_resources	= ARRAY_SIZE(ep93xx_pwm0_resource),
++	.resource	= ep93xx_pwm0_resource,
++};
++
++static struct resource ep93xx_pwm1_resource[] = {
++	{
++		.start	= EP93XX_PWM_PHYS_BASE + 0x20,
++		.end	= EP93XX_PWM_PHYS_BASE + 0x30 - 1,
++		.flags	= IORESOURCE_MEM,
++	},
++};
++
++static struct platform_device ep93xx_pwm1_device = {
++	.name		= "ep93xx-pwm",
++	.id		= 1,
++	.num_resources	= ARRAY_SIZE(ep93xx_pwm1_resource),
++	.resource	= ep93xx_pwm1_resource,
++};
++
++void __init ep93xx_register_pwm(int pwm0, int pwm1)
++{
++	if (pwm0)
++		platform_device_register(&ep93xx_pwm0_device);
++
++	/* NOTE: EP9307 does not have PWMOUT1 (pin EGPIO14) */
++	if (pwm1)
++		platform_device_register(&ep93xx_pwm1_device);
++}
++
++int ep93xx_pwm_acquire_gpio(struct platform_device *pdev)
++{
++	int err;
++
++	if (pdev->id == 0) {
++		err = 0;
++	} else if (pdev->id == 1) {
++		err = gpio_request(EP93XX_GPIO_LINE_EGPIO14,
++				   dev_name(&pdev->dev));
++		if (err)
++			return err;
++		err = gpio_direction_output(EP93XX_GPIO_LINE_EGPIO14, 0);
++		if (err)
++			goto fail;
++
++		/* PWM 1 output on EGPIO[14] */
++		ep93xx_devcfg_set_bits(EP93XX_SYSCON_DEVCFG_PONG);
++	} else {
++		err = -ENODEV;
++	}
++
++	return err;
++
++fail:
++	gpio_free(EP93XX_GPIO_LINE_EGPIO14);
++	return err;
++}
++EXPORT_SYMBOL(ep93xx_pwm_acquire_gpio);
++
++void ep93xx_pwm_release_gpio(struct platform_device *pdev)
++{
++	if (pdev->id == 1) {
++		gpio_direction_input(EP93XX_GPIO_LINE_EGPIO14);
++		gpio_free(EP93XX_GPIO_LINE_EGPIO14);
++
++		/* EGPIO[14] used for GPIO */
++		ep93xx_devcfg_clear_bits(EP93XX_SYSCON_DEVCFG_PONG);
++	}
++}
++EXPORT_SYMBOL(ep93xx_pwm_release_gpio);
++
++
++/*************************************************************************
   * EP93xx peripheral handling
   *************************************************************************/
  #define EP93XX_UART_MCR_OFFSET		(0x0100)
-@@ -517,6 +556,15 @@ void __init ep93xx_register_eth(struct ep93xx_eth_data *data, int copy_addr)
+@@ -517,6 +641,15 @@ void __init ep93xx_register_eth(struct ep93xx_eth_data *data, int copy_addr)
  	platform_device_register(&ep93xx_eth_device);
  }
  
@@ -525,7 +609,7 @@ index 6d9152d..7983a3b 100644
  static struct i2c_gpio_platform_data ep93xx_i2c_data = {
  	.sda_pin		= EP93XX_GPIO_LINE_EEDAT,
  	.sda_is_open_drain	= 0,
-@@ -524,6 +572,7 @@ static struct i2c_gpio_platform_data ep93xx_i2c_data = {
+@@ -524,6 +657,7 @@ static struct i2c_gpio_platform_data ep93xx_i2c_data = {
  	.scl_is_open_drain	= 0,
  	.udelay			= 2,
  };
@@ -533,7 +617,7 @@ index 6d9152d..7983a3b 100644
  
  static struct platform_device ep93xx_i2c_device = {
  	.name			= "i2c-gpio",
-@@ -537,19 +586,67 @@ void __init ep93xx_register_i2c(struct i2c_board_info *devices, int num)
+@@ -537,19 +671,67 @@ void __init ep93xx_register_i2c(struct i2c_board_info *devices, int num)
  	platform_device_register(&ep93xx_i2c_device);
  }
  
@@ -610,7 +694,7 @@ index 6d9152d..7983a3b 100644
  
  	ep93xx_gpio_init();
  
-@@ -557,6 +654,8 @@ void __init ep93xx_init_devices(void)
+@@ -557,6 +739,8 @@ void __init ep93xx_init_devices(void)
  	amba_device_register(&uart2_device, &iomem_resource);
  	amba_device_register(&uart3_device, &iomem_resource);
  
@@ -952,7 +1036,7 @@ index 0000000..e39743a
 +
 +#endif /* EP93XX_KEYPAD_H */
 diff --git a/arch/arm/mach-ep93xx/include/mach/ep93xx-regs.h b/arch/arm/mach-ep93xx/include/mach/ep93xx-regs.h
-index 22d6c9a..36c23fb 100644
+index 22d6c9a..5af069a 100644
 --- a/arch/arm/mach-ep93xx/include/mach/ep93xx-regs.h
 +++ b/arch/arm/mach-ep93xx/include/mach/ep93xx-regs.h
 @@ -104,6 +104,8 @@
@@ -993,23 +1077,15 @@ index 22d6c9a..36c23fb 100644
  
  #define EP93XX_IRDA_BASE		(EP93XX_APB_VIRT_BASE + 0x000b0000)
  
-@@ -144,6 +154,15 @@
+@@ -144,6 +154,7 @@
  #define EP93XX_TOUCHSCREEN_BASE		(EP93XX_APB_VIRT_BASE + 0x00100000)
  
  #define EP93XX_PWM_BASE			(EP93XX_APB_VIRT_BASE + 0x00110000)
-+#define EP93XX_PWM_REG(x)		(EP93XX_PWM_BASE + (x))
-+#define EP93XX_PWM0_CYCLE		EP93XX_PWM_REG(0x00)
-+#define EP93XX_PWM0_DUTY		EP93XX_PWM_REG(0x04)
-+#define EP93XX_PWM0_EN		EP93XX_PWM_REG(0x08)
-+#define EP93XX_PWM0_INV		EP93XX_PWM_REG(0x0C)
-+#define EP93XX_PWM1_CYCLE		EP93XX_PWM_REG(0x20)
-+#define EP93XX_PWM1_DUTY		EP93XX_PWM_REG(0x24)
-+#define EP93XX_PWM1_EN		EP93XX_PWM_REG(0x28)
-+#define EP93XX_PWM1_INV		EP93XX_PWM_REG(0x2C)
++#define EP93XX_PWM_PHYS_BASE		(EP93XX_APB_PHYS_BASE + 0x00110000)
  
  #define EP93XX_RTC_BASE			(EP93XX_APB_VIRT_BASE + 0x00120000)
  
-@@ -157,8 +176,38 @@
+@@ -157,8 +168,38 @@
  #define EP93XX_SYSCON_STANDBY		EP93XX_SYSCON_REG(0x0c)
  #define EP93XX_SYSCON_CLOCK_SET1	EP93XX_SYSCON_REG(0x20)
  #define EP93XX_SYSCON_CLOCK_SET2	EP93XX_SYSCON_REG(0x24)
@@ -1088,10 +1164,18 @@ index 5c80c3c..1866141 100644
 +
  #endif
 diff --git a/arch/arm/mach-ep93xx/include/mach/platform.h b/arch/arm/mach-ep93xx/include/mach/platform.h
-index 05f0f4f..8ed8fb6 100644
+index 05f0f4f..3bbdc7f 100644
 --- a/arch/arm/mach-ep93xx/include/mach/platform.h
 +++ b/arch/arm/mach-ep93xx/include/mach/platform.h
-@@ -15,9 +15,22 @@ struct ep93xx_eth_data
+@@ -5,6 +5,7 @@
+ #ifndef __ASSEMBLY__
+ 
+ struct i2c_board_info;
++struct platform_device;
+ 
+ struct ep93xx_eth_data
+ {
+@@ -15,9 +16,26 @@ struct ep93xx_eth_data
  void ep93xx_map_io(void);
  void ep93xx_init_irq(void);
  void ep93xx_init_time(unsigned long);
@@ -1099,6 +1183,10 @@ index 05f0f4f..8ed8fb6 100644
 +void ep93xx_devcfg_set_clear(unsigned int set_bits, unsigned int clear_bits);
  void ep93xx_register_eth(struct ep93xx_eth_data *data, int copy_addr);
  void ep93xx_register_i2c(struct i2c_board_info *devices, int num);
++void ep93xx_register_pwm(int pwm0, int pwm1);
++int ep93xx_pwm_acquire_gpio(struct platform_device *pdev);
++void ep93xx_pwm_release_gpio(struct platform_device *pdev);
++
  void ep93xx_init_devices(void);
  extern struct sys_timer ep93xx_timer;
  
@@ -1164,10 +1252,10 @@ index 67789d0..9af1fc7 100644
  	while (1)
  		;
 diff --git a/arch/arm/mach-ep93xx/include/mach/ts72xx.h b/arch/arm/mach-ep93xx/include/mach/ts72xx.h
-index 34ddec0..a8c8826 100644
+index 34ddec0..6d99118 100644
 --- a/arch/arm/mach-ep93xx/include/mach/ts72xx.h
 +++ b/arch/arm/mach-ep93xx/include/mach/ts72xx.h
-@@ -8,21 +8,34 @@
+@@ -8,21 +8,35 @@
   * virt		phys		size
   * febff000	22000000	4K	model number register
   * febfe000	22400000	4K	options register
@@ -1203,10 +1291,11 @@ index 34ddec0..a8c8826 100644
 +#define TS7XXX_MODEL_TS7260		0x02
 +#define TS7XXX_MODEL_TS7300		0x03
 +#define TS7XXX_MODEL_TS7400		0x04
++#define TS7XXX_MODEL_MASK		0x07
  
  
  #define TS72XX_OPTIONS_PHYS_BASE	0x22400000
-@@ -53,12 +66,13 @@
+@@ -53,12 +67,13 @@
  #define TS72XX_NAND2_CONTROL_PHYS_BASE	0x70400000
  #define TS72XX_NAND_CONTROL_VIRT_BASE	0xfebfb000
  #define TS72XX_NAND_CONTROL_SIZE	0x00001000
@@ -1221,7 +1310,7 @@ index 34ddec0..a8c8826 100644
  
  #define TS72XX_RTC_INDEX_VIRT_BASE	0xfebf9000
  #define TS72XX_RTC_INDEX_PHYS_BASE	0x10800000
-@@ -68,23 +82,92 @@
+@@ -68,34 +83,125 @@
  #define TS72XX_RTC_DATA_PHYS_BASE	0x11700000
  #define TS72XX_RTC_DATA_SIZE		0x00001000
  
@@ -1296,128 +1385,62 @@ index 34ddec0..a8c8826 100644
  static inline int board_is_ts7200(void)
  {
 -	return __raw_readb(TS72XX_MODEL_VIRT_BASE) == TS72XX_MODEL_TS7200;
-+	return __raw_readb(TS72XX_MODEL_VIRT_BASE) == TS7XXX_MODEL_TS7200;
++	return (__raw_readb(TS72XX_MODEL_VIRT_BASE) &
++			TS7XXX_MODEL_MASK) == TS7XXX_MODEL_TS7200;
  }
  
  static inline int board_is_ts7250(void)
  {
 -	return __raw_readb(TS72XX_MODEL_VIRT_BASE) == TS72XX_MODEL_TS7250;
-+	return __raw_readb(TS72XX_MODEL_VIRT_BASE) == TS7XXX_MODEL_TS7250;
++	return (__raw_readb(TS72XX_MODEL_VIRT_BASE) &
++			TS7XXX_MODEL_MASK) == TS7XXX_MODEL_TS7250;
  }
  
  static inline int board_is_ts7260(void)
  {
 -	return __raw_readb(TS72XX_MODEL_VIRT_BASE) == TS72XX_MODEL_TS7260;
-+	return __raw_readb(TS72XX_MODEL_VIRT_BASE) == TS7XXX_MODEL_TS7260;
++	return (__raw_readb(TS72XX_MODEL_VIRT_BASE) &
++			TS7XXX_MODEL_MASK) == TS7XXX_MODEL_TS7260;
 +}
 +
 +static inline int board_is_ts7400(void)
 +{
-+	return (__raw_readb(TS72XX_MODEL_VIRT_BASE) & 0xF) == TS7XXX_MODEL_TS7400;
++	return (__raw_readb(TS72XX_MODEL_VIRT_BASE) &
++			TS7XXX_MODEL_MASK) == TS7XXX_MODEL_TS7400;
  }
  
  static inline int is_max197_installed(void)
-@@ -98,4 +181,21 @@ static inline int is_ts9420_installed(void)
- 	return !!(__raw_readb(TS72XX_OPTIONS2_VIRT_BASE) &
- 					TS72XX_OPTIONS2_TS9420);
+ {
+ 	return !!(__raw_readb(TS72XX_OPTIONS_VIRT_BASE) &
+-					TS72XX_OPTIONS_MAX197);
++			TS72XX_OPTIONS_MAX197);
  }
+ 
+ static inline int is_ts9420_installed(void)
+ {
+ 	return !!(__raw_readb(TS72XX_OPTIONS2_VIRT_BASE) &
+-					TS72XX_OPTIONS2_TS9420);
++			TS72XX_OPTIONS2_TS9420);
++}
 +
 +static inline int is_rs485_installed(void)
 +{
 +	return !!(__raw_readb(TS72XX_OPTIONS_VIRT_BASE) &
-+					TS72XX_OPTIONS_COM2_RS485);
++			TS72XX_OPTIONS_COM2_RS485);
 +}
 +
 +static inline int get_ts72xx_pld_version(void)
 +{
 +	return (__raw_readb(TS72XX_PLD_VERSION_VIRT_BASE) & 0x7);
-+}
+ }
 +
++/* User jumper */
 +static inline int is_jp6_set(void)
 +{
 +	return (__raw_readb(TS72XX_OPTIONS2_VIRT_BASE) & 0x1);
 +}
 +
  #endif
-diff --git a/arch/arm/mach-ep93xx/include/mach/uncompress.h b/arch/arm/mach-ep93xx/include/mach/uncompress.h
-index 16026c2..b3a902f 100644
---- a/arch/arm/mach-ep93xx/include/mach/uncompress.h
-+++ b/arch/arm/mach-ep93xx/include/mach/uncompress.h
-@@ -86,9 +86,74 @@ static void ethernet_reset(void)
- }
- 
- 
-+/*
-+ * We don't have clock management for the UARTs (amba-pl010)
-+ * yet, so hackily enable all UART clocks here for now.
-+ */
-+#define PHYS_SYSCON_DEVICE_CONFIG	0x80930080
-+#define PHYS_SYSCON_SWLOCK		0x809300c0
-+
-+static void enable_all_uart_clocks(void)
-+{
-+	unsigned int v;
-+
-+	v = __raw_readl(PHYS_SYSCON_DEVICE_CONFIG);
-+	__raw_writel(0xaa, PHYS_SYSCON_SWLOCK);
-+	__raw_writel(v | 0x01140000, PHYS_SYSCON_DEVICE_CONFIG);
-+}
-+
-+
-+/*
-+ * Some bootloaders don't turn on the UARTBAUD bit, which means that
-+ * the UARTs will be running off a divided 7.3728 MHz clock instead of
-+ * the 14.7456 MHz peripheral clock when linux boots.
-+ *
-+ * We detect that condition here and fix it by turning on UARTBAUD, and
-+ * then reprogramming the divisors on all enabled UARTs to twice what
-+ * they were before we turned UARTBAUD on, to preserve the programmed
-+ * baud rate.
-+ */
-+#define PHYS_SYSCON_CLOCK_CONTROL	0x80930004
-+#define SYSCON_CLOCK_UARTBAUD		0x20000000
-+#define PHYS_UART1_BASE			0x808c0000
-+#define PHYS_UART2_BASE			0x808d0000
-+#define PHYS_UART3_BASE			0x808e0000
-+
-+static void uart_divisor_times_two(unsigned int base)
-+{
-+	u16 divisor;
-+
-+	divisor = __raw_readb(base + 0x0c) << 8;
-+	divisor |= __raw_readb(base + 0x10);
-+	if (divisor) {
-+		divisor = (2 * (divisor + 1)) - 1;
-+		__raw_writeb(divisor >> 8, base + 0x0c);
-+		__raw_writeb(divisor & 0xff, base + 0x10);
-+		__raw_writeb(__raw_readb(base + 0x08), base + 0x08);
-+	}
-+}
-+
-+static void fix_uart_base(void)
-+{
-+	unsigned int v;
-+
-+	v = __raw_readl(PHYS_SYSCON_CLOCK_CONTROL);
-+	if ((v & SYSCON_CLOCK_UARTBAUD) == 0) {
-+		v |= SYSCON_CLOCK_UARTBAUD;
-+		__raw_writel(v, PHYS_SYSCON_CLOCK_CONTROL);
-+
-+		uart_divisor_times_two(PHYS_UART1_BASE);
-+		uart_divisor_times_two(PHYS_UART2_BASE);
-+		uart_divisor_times_two(PHYS_UART3_BASE);
-+	}
-+}
-+
-+
- static void arch_decomp_setup(void)
- {
- 	ethernet_reset();
-+	enable_all_uart_clocks();
-+	fix_uart_base();
- }
- 
- #define arch_decomp_wdog()
 diff --git a/arch/arm/mach-ep93xx/pm.c b/arch/arm/mach-ep93xx/pm.c
 new file mode 100644
 index 0000000..7fe8e4e
@@ -1502,7 +1525,7 @@ index 0000000..7fe8e4e
 +}
 +__initcall(ep93xx_pm_init);
 diff --git a/arch/arm/mach-ep93xx/ts72xx.c b/arch/arm/mach-ep93xx/ts72xx.c
-index 7ee024d..95c49ff 100644
+index 7ee024d..ee7baeb 100644
 --- a/arch/arm/mach-ep93xx/ts72xx.c
 +++ b/arch/arm/mach-ep93xx/ts72xx.c
 @@ -21,7 +21,10 @@
@@ -1595,7 +1618,7 @@ index 7ee024d..95c49ff 100644
  
  static unsigned char ts72xx_rtc_readbyte(unsigned long addr)
  {
-@@ -162,12 +205,108 @@ static struct ep93xx_eth_data ts72xx_eth_data = {
+@@ -162,12 +205,106 @@ static struct ep93xx_eth_data ts72xx_eth_data = {
  	.phy_id		= 1,
  };
  
@@ -1697,16 +1720,14 @@ index 7ee024d..95c49ff 100644
 +	spi_register_board_info(ts72xx_spi_bus, ARRAY_SIZE(ts72xx_spi_bus));
 +	#endif
 +
-+	// DIO_6 on TS-72xx header
-+	#if defined(CONFIG_EP93XX_PWM) || defined(CONFIG_EP93XX_PWM_MODULE)
-+	(void) platform_device_register_simple("ep93xx-pwm", 1, NULL, 0);
-+	#endif
++	/* PWM1 is DIO_6 on TS-72xx header */
++	ep93xx_register_pwm(1, 1);
  
  	ep93xx_register_eth(&ts72xx_eth_data, 1);
  }
 diff --git a/arch/arm/mach-ep93xx/ts72xx_sbcinfo.c b/arch/arm/mach-ep93xx/ts72xx_sbcinfo.c
 new file mode 100644
-index 0000000..f2b8360
+index 0000000..9d10b29
 --- /dev/null
 +++ b/arch/arm/mach-ep93xx/ts72xx_sbcinfo.c
 @@ -0,0 +1,154 @@
@@ -1730,11 +1751,11 @@ index 0000000..f2b8360
 +#include <mach/hardware.h>
 +
 +struct infos {
-+  const char *cpu_rev;
-+  int model, pld;
-+  int option_ad;
-+  int option_rs485;
-+  unsigned char jumpers[6]; // 0=off,1=on,2=error
++	const char *cpu_rev;
++	int model, pld;
++	int option_ad;
++	int option_rs485;
++	unsigned char jumpers[6]; // 0=off,1=on,2=error
 +};
 +
 +static const char *revisions[] = { "A", "B", "C", "D0", "D1", "E0", "E1", "E2", "??" };
@@ -1742,119 +1763,119 @@ index 0000000..f2b8360
 +
 +static void get_sbcinfo(struct infos *data)
 +{
-+  void __iomem *p;
-+  short rev;
++	void __iomem *p;
++	short rev;
 +
-+  /* CPU revision */
-+  rev = __raw_readl(EP93XX_SYSCON_CHIPID) >> 28;
-+  if (rev > ARRAY_SIZE(revisions))
-+    rev = ARRAY_SIZE(revisions) - 1;
-+  data->cpu_rev = revisions[rev];
++	/* CPU revision */
++	rev = __raw_readl(EP93XX_SYSCON_CHIPID) >> 28;
++	if (rev > ARRAY_SIZE(revisions))
++		rev = ARRAY_SIZE(revisions) - 1;
++	data->cpu_rev = revisions[rev];
 +
-+  /* Board model */
-+  if (board_is_ts7200())
-+    data->model = 7200;
-+  else if (board_is_ts7250())
-+    data->model = 7250;
-+  else if (board_is_ts7260())
-+    data->model = 7260;
-+  else if (board_is_ts7400())
-+    data->model = 7400;
-+  else
-+    data->model = 0;
++	/* Board model */
++	if (board_is_ts7200())
++		data->model = 7200;
++	else if (board_is_ts7250())
++		data->model = 7250;
++	else if (board_is_ts7260())
++		data->model = 7260;
++	else if (board_is_ts7400())
++		data->model = 7400;
++	else
++		data->model = 0;
 +
-+  data->pld = get_ts72xx_pld_version();
++	data->pld = get_ts72xx_pld_version();
 +
-+  /* A/D converter (8 x 12-bit channels) */
-+  if ((data->model == 7200) || (data->model = 7250)) {
-+    data->option_ad = is_max197_installed();
-+  } else {
-+    data->option_ad = 0;
-+  }
++	/* A/D converter (8 x 12-bit channels) */
++	if ((data->model == 7200) || (data->model == 7250)) {
++		data->option_ad = is_max197_installed();
++	} else {
++		data->option_ad = 0;
++	}
 +
-+  /* COM2 RS-485 */
-+  if (is_rs485_installed()) {
-+    data->option_rs485 = 1;
-+  } else {
-+    data->option_rs485 = 0;
-+  }
++	/* COM2 RS-485 */
++	if (is_rs485_installed()) {
++		data->option_rs485 = 1;
++	} else {
++		data->option_rs485 = 0;
++	}
 +
-+  /* jumpers */
-+  p = ioremap(TS72XX_JUMPERS_MAX197_PHYS_BASE, TS72XX_JUMPERS_MAX197_SIZE);
-+  if (p) {
-+    unsigned char c = __raw_readb(p);
++	/* jumpers */
++	p = ioremap(TS72XX_JUMPERS_MAX197_PHYS_BASE, TS72XX_JUMPERS_MAX197_SIZE);
++	if (p) {
++		unsigned char c = __raw_readb(p);
 +
-+    data->jumpers[0] = 2;                // JP1 (bootstrap)
-+    data->jumpers[1] = !!(c & 0x01);     // JP2 (enable serial console)
-+    data->jumpers[2] = !!(c & 0x02);     // JP3 (flash write enable)
-+    data->jumpers[3] = !(c & 0x08);      // JP4 (console on COM2)
-+    data->jumpers[4] = !(c & 0x10);      // JP5 (test)
-+    data->jumpers[5] = !!(is_jp6_set()); // JP6 (user jumper)
++		data->jumpers[0] = 2;                // JP1 (bootstrap)
++		data->jumpers[1] = !!(c & 0x01);     // JP2 (enable serial console)
++		data->jumpers[2] = !!(c & 0x02);     // JP3 (flash write enable)
++		data->jumpers[3] = !(c & 0x08);      // JP4 (console on COM2)
++		data->jumpers[4] = !(c & 0x10);      // JP5 (test)
++		data->jumpers[5] = !!(is_jp6_set()); // JP6 (user jumper)
 +
-+    iounmap(p);
-+  } else {
-+    data->jumpers[0] = data->jumpers[1] = data->jumpers[2] = 2;
-+    data->jumpers[3] = data->jumpers[4] = data->jumpers[5] = 2;
-+  }
++		iounmap(p);
++	} else {
++		data->jumpers[0] = data->jumpers[1] = data->jumpers[2] = 2;
++		data->jumpers[3] = data->jumpers[4] = data->jumpers[5] = 2;
++	}
 +
 +}
 +
 +
 +static int ts72xx_sbcinfo_read_proc(char *buffer, char **start, off_t offset,
-+    int count, int *eof, void *data)
++		int count, int *eof, void *data)
 +{
-+  int len, size = count;
-+  char *p = buffer;
-+  struct infos nfo;
-+  const char jpc[3] = { 'n', 'y', '?' };
++	int len, size = count;
++	char *p = buffer;
++	struct infos nfo;
++	const char jpc[3] = { 'n', 'y', '?' };
 +
-+  get_sbcinfo(&nfo);
-+  len = scnprintf(p, size,
-+      "Model             : TS-%d (CPU rev %s) (PLD rev %c)\n"
-+      "Option max197 A/D : %s\n"
-+      "Option RS-485     : %s\n"
-+      "Jumpers           : JP2=%c JP3=%c JP4=%c JP5=%c JP6=%c\n",
-+      nfo.model, nfo.cpu_rev, nfo.pld + 0x40,
-+      (nfo.option_ad ? "yes" : "no"),
-+      (nfo.option_rs485 ? "yes" : "no"),
-+      jpc[nfo.jumpers[1]], jpc[nfo.jumpers[2]], jpc[nfo.jumpers[3]], jpc[nfo.jumpers[4]],
-+      jpc[nfo.jumpers[5]]);
++	get_sbcinfo(&nfo);
++	len = scnprintf(p, size,
++			"Model             : TS-%d (CPU rev %s) (PLD rev %c)\n"
++			"Option max197 A/D : %s\n"
++			"Option RS-485     : %s\n"
++			"Jumpers           : JP2=%c JP3=%c JP4=%c JP5=%c JP6=%c\n",
++			nfo.model, nfo.cpu_rev, nfo.pld + 0x40,
++			(nfo.option_ad ? "yes" : "no"),
++			(nfo.option_rs485 ? "yes" : "no"),
++			jpc[nfo.jumpers[1]], jpc[nfo.jumpers[2]], jpc[nfo.jumpers[3]], jpc[nfo.jumpers[4]],
++			jpc[nfo.jumpers[5]]);
 +
-+  if (len <= offset + count)
-+    *eof = 1;
++	if (len <= offset + count)
++		*eof = 1;
 +
-+  *start = buffer + offset;
-+  len -= offset;
++	*start = buffer + offset;
++	len -= offset;
 +
-+  if (len > count)
-+    len = count;
-+  if (len < 0)
-+    len = 0;
++	if (len > count)
++		len = count;
++	if (len < 0)
++		len = 0;
 +
-+  return len;
++	return len;
 +}
 +
 +
 +static int __init ts72xx_sbcinfo_init(void)
 +{
-+  struct proc_dir_entry *entry;
-+  int ret = 0;
++	struct proc_dir_entry *entry;
++	int ret = 0;
 +
-+  entry = create_proc_read_entry("driver/sbcinfo", 0,
-+      NULL, ts72xx_sbcinfo_read_proc, NULL);
++	entry = create_proc_read_entry("driver/sbcinfo", 0,
++			NULL, ts72xx_sbcinfo_read_proc, NULL);
 +
-+  if (!entry) {
-+    printk(KERN_ERR "sbcinfo: can't create /proc/driver/sbcinfo\n");
-+    ret = -ENOMEM;
-+  }
++	if (!entry) {
++		printk(KERN_ERR "sbcinfo: can't create /proc/driver/sbcinfo\n");
++		ret = -ENOMEM;
++	}
 +
-+  return ret;
++	return ret;
 +}
 +
 +static void __exit ts72xx_sbcinfo_exit(void)
 +{
-+  remove_proc_entry("driver/sbcinfo", NULL);
-+  return;
++	remove_proc_entry("driver/sbcinfo", NULL);
++	return;
 +}
 +
 +module_init(ts72xx_sbcinfo_init);
@@ -1863,7 +1884,7 @@ index 0000000..f2b8360
 +MODULE_AUTHOR("Matthieu Crapet <mcrapet@gmail.com>");
 +MODULE_DESCRIPTION("Show information of Technologic Systems TS-72XX sbc");
 +MODULE_LICENSE("GPL");
-+MODULE_VERSION("1.01");
++MODULE_VERSION("1.02");
 diff --git a/arch/arm/mm/proc-arm920.S b/arch/arm/mm/proc-arm920.S
 index 914d688..a42fcb4 100644
 --- a/arch/arm/mm/proc-arm920.S
@@ -2876,10 +2897,10 @@ index 0000000..c536003
 +MODULE_DESCRIPTION("Platform device 4x4 keypad");
 +MODULE_LICENSE("GPL");
 diff --git a/drivers/misc/Kconfig b/drivers/misc/Kconfig
-index c64e679..c4b300a 100644
+index c64e679..cd377a3 100644
 --- a/drivers/misc/Kconfig
 +++ b/drivers/misc/Kconfig
-@@ -226,4 +226,32 @@ config DELL_LAPTOP
+@@ -226,4 +226,38 @@ config DELL_LAPTOP
  source "drivers/misc/c2port/Kconfig"
  source "drivers/misc/eeprom/Kconfig"
  
@@ -2887,8 +2908,14 @@ index c64e679..c4b300a 100644
 +	tristate "EP93xx PWM support"
 +	depends on ARCH_EP93XX
 +	help
-+	  This option enables device driver support for the PWM channels.
-+	  sysfs entries are added to control count and duty cycle.
++	  This option enables device driver support for the PWM channels
++	  on the Cirrus EP93xx processors.  The EP9307 chip only has one
++	  PWM channel all the others have two, the second channel is an
++	  alternate function of the EGPIO14 pin.  A sysfs interface is
++	  provided to control the PWM channels.
++
++	  To compile this driver as a module, choose M here: the module will
++	  be called ep93xx_pwm.
 +
 +config TS72XX_MAX197
 +	tristate "TS-72xx MAX197 support"
@@ -2926,270 +2953,394 @@ index bc11998..42a47d8 100644
  obj-y				+= eeprom/
 diff --git a/drivers/misc/ep93xx_pwm.c b/drivers/misc/ep93xx_pwm.c
 new file mode 100644
-index 0000000..82fa596
+index 0000000..ba46941
 --- /dev/null
 +++ b/drivers/misc/ep93xx_pwm.c
-@@ -0,0 +1,260 @@
+@@ -0,0 +1,384 @@
 +/*
 + *  Simple PWM driver for EP93XX
 + *
 + *	(c) Copyright 2009  Matthieu Crapet <mcrapet@gmail.com>
++ *	(c) Copyright 2009  H Hartley Sweeten <hsweeten@visionengravers.com>
 + *
 + *	This program is free software; you can redistribute it and/or
 + *	modify it under the terms of the GNU General Public License
 + *	as published by the Free Software Foundation; either version
 + *	2 of the License, or (at your option) any later version.
 + *
-+ *  EP93XX has only two channels:
++ *  EP9307 has only one channel:
 + *    - PWMOUT
-+ *    - PWM1 (alternate function for EGPIO14)
++ *
++ *  EP9301/02/12/15 have two channels:
++ *    - PWMOUT
++ *    - PWMOUT1 (alternate function for EGPIO14)
 + */
 +
 +#include <linux/module.h>
-+#include <linux/kernel.h>
-+#include <linux/init.h>
++#include <linux/platform_device.h>
 +#include <linux/clk.h>
 +#include <linux/err.h>
-+#include <linux/platform_device.h>
-+#include <mach/hardware.h>
++#include <linux/io.h>
 +
++#include <mach/platform.h>
 +
-+#define EP93XX_PWM_MAX_CYCLE 0xFFFF /* 16-bit */
++#define EP93XX_PWMx_TERM_COUNT	0x00
++#define EP93XX_PWMx_DUTY_CYCLE	0x04
++#define EP93XX_PWMx_ENABLE	0x08
++#define EP93XX_PWMx_INVERT	0x0C
 +
-+struct pwmchannel
-+{
-+  struct clk *clk;
-+  u32 duty_ratio; // permil (1..999)
++#define EP93XX_PWM_MAX_COUNT	0xFFFF
++
++struct ep93xx_pwm {
++	void __iomem	*mmio_base;
++	struct clk	*clk;
++	u32		duty_percent;
 +};
 +
-+
-+/* Low-level access to PWM */
-+
-+static inline void pwm_enable(int index)
++static inline void ep93xx_pwm_writel(struct ep93xx_pwm *pwm,
++		unsigned int val, unsigned int off)
 +{
-+  __raw_writel(1, (index) ? EP93XX_PWM1_EN : EP93XX_PWM0_EN);
++	__raw_writel(val, pwm->mmio_base + off);
 +}
 +
-+static inline void pwm_disable(int index)
++static inline unsigned int ep93xx_pwm_readl(struct ep93xx_pwm *pwm,
++		unsigned int off)
 +{
-+  __raw_writel(0, (index) ? EP93XX_PWM1_EN : EP93XX_PWM0_EN);
++	return __raw_readl(pwm->mmio_base + off);
 +}
 +
-+static inline int pwm_is_enabled(int index)
++static inline void ep93xx_pwm_write_tc(struct ep93xx_pwm *pwm, u16 value)
 +{
-+  return (__raw_readl((index) ? EP93XX_PWM1_EN : EP93XX_PWM0_EN) & 1);
++	ep93xx_pwm_writel(pwm, value, EP93XX_PWMx_TERM_COUNT);
 +}
 +
-+static inline void pwm_write_cycle(int index, u16 value)
++static inline u16 ep93xx_pwm_read_tc(struct ep93xx_pwm *pwm)
 +{
-+  __raw_writel(value, (index) ? EP93XX_PWM1_CYCLE : EP93XX_PWM0_CYCLE);
++	return ep93xx_pwm_readl(pwm, EP93XX_PWMx_TERM_COUNT);
 +}
 +
-+static inline void pwm_write_duty(int index, u16 value)
++static inline void ep93xx_pwm_write_dc(struct ep93xx_pwm *pwm, u16 value)
 +{
-+  __raw_writel(value, (index) ? EP93XX_PWM1_DUTY : EP93XX_PWM0_DUTY);
++	ep93xx_pwm_writel(pwm, value, EP93XX_PWMx_DUTY_CYCLE);
 +}
 +
-+static inline u16 pwm_read_cycle(int index)
++static inline void ep93xx_pwm_enable(struct ep93xx_pwm *pwm)
 +{
-+  return __raw_readl((index) ? EP93XX_PWM1_CYCLE : EP93XX_PWM0_CYCLE);
++	ep93xx_pwm_writel(pwm, 0x1, EP93XX_PWMx_ENABLE);
 +}
 +
-+
-+/* sysfs entries */
-+
-+static ssize_t pwm_get_duty(struct device *dev,
-+    struct device_attribute *attr, char *buf)
++static inline void ep93xx_pwm_disable(struct ep93xx_pwm *pwm)
 +{
-+  struct platform_device *pdev = to_platform_device(dev);
-+  struct pwmchannel *pwm = platform_get_drvdata(pdev);
-+
-+  return sprintf(buf, "%d%%\n", pwm->duty_ratio / 10);
++	ep93xx_pwm_writel(pwm, 0x0, EP93XX_PWMx_ENABLE);
 +}
 +
-+static ssize_t pwm_set_duty(struct device *dev,
-+    struct device_attribute *attr,
-+    const char *buf, size_t count)
++static inline int ep93xx_pwm_is_enabled(struct ep93xx_pwm *pwm)
 +{
-+  struct platform_device *pdev = to_platform_device(dev);
-+  struct pwmchannel *pwm = platform_get_drvdata(pdev);
-+  long val = simple_strtol(buf, NULL, 10);
-+
-+  if (val > 0 && val < 100)
-+  {
-+    u32 count = pwm_read_cycle(pdev->id);
-+    pwm_write_duty(pdev->id, (u16)(count * val / 100));
-+    pwm->duty_ratio = 10*val;
-+    return count;
-+  }
-+
-+  return -EINVAL;
++	return ep93xx_pwm_readl(pwm, EP93XX_PWMx_ENABLE) & 0x1;
 +}
 +
-+static ssize_t pwm_get_cycle(struct device *dev,
-+    struct device_attribute *attr, char *buf)
++static inline void ep93xx_pwm_invert(struct ep93xx_pwm *pwm)
 +{
-+  struct platform_device *pdev = to_platform_device(dev);
-+  struct pwmchannel *pwm = platform_get_drvdata(pdev);
-+
-+  if (pwm_is_enabled(pdev->id))
-+    return sprintf(buf, "%ld Hz\n",
-+        clk_get_rate(pwm->clk) / pwm_read_cycle(pdev->id));
-+  else
-+    return sprintf(buf, "disabled\n");
++	ep93xx_pwm_writel(pwm, 0x1, EP93XX_PWMx_INVERT);
 +}
 +
-+static ssize_t pwm_set_cycle(struct device *dev,
-+    struct device_attribute *attr,
-+    const char *buf, size_t count)
++static inline void ep93xx_pwm_normal(struct ep93xx_pwm *pwm)
 +{
-+  struct platform_device *pdev = to_platform_device(dev);
-+  struct pwmchannel *pwm = platform_get_drvdata(pdev);
-+  long val = simple_strtol(buf, NULL, 10);
-+
-+  if (val == 0) {
-+    pwm_disable(pdev->id);
-+  } else if (val > 0 && val <= clk_get_rate(pwm->clk)) {
-+    u32 old_count, new_duty;
-+
-+    val = clk_get_rate(pwm->clk) / val;
-+
-+    if (val > EP93XX_PWM_MAX_CYCLE)
-+      val = EP93XX_PWM_MAX_CYCLE;
-+
-+    old_count = pwm_read_cycle(pdev->id);
-+    new_duty = val * pwm->duty_ratio / 1000;
-+
-+    /* if pwm is running, order is important */
-+    if (val > old_count) {
-+      pwm_write_cycle(pdev->id, (u16)val);
-+      pwm_write_duty(pdev->id, (u16)new_duty);
-+    } else {
-+      pwm_write_duty(pdev->id, (u16)new_duty);
-+      pwm_write_cycle(pdev->id, (u16)val);
-+    }
-+
-+    if (!pwm_is_enabled(pdev->id))
-+      pwm_enable(pdev->id);
-+
-+  } else {
-+    return -EINVAL;
-+  }
-+
-+  return count;
++	ep93xx_pwm_writel(pwm, 0x0, EP93XX_PWMx_INVERT);
 +}
 +
-+static DEVICE_ATTR(duty, S_IWUGO | S_IRUGO, pwm_get_duty, pwm_set_duty);
-+static DEVICE_ATTR(cycle, S_IWUGO | S_IRUGO, pwm_get_cycle, pwm_set_cycle);
-+
-+
-+static int __init pwm_ep93xx_probe(struct platform_device *pdev)
++static inline int ep93xx_pwm_is_inverted(struct ep93xx_pwm *pwm)
 +{
-+  struct pwmchannel *pwm;
-+  int retval;
-+
-+  if ((pdev->id != 0) && (pdev->id != 1)) {
-+    dev_err(&pdev->dev, "PWM id is not valid\n");
-+    return -ENODEV;
-+  }
-+
-+  pwm = kzalloc(sizeof(*pwm), GFP_KERNEL);
-+  if (!pwm) {
-+    retval = -ENOMEM;
-+    goto error1;
-+  }
-+
-+  retval = device_create_file(&pdev->dev, &dev_attr_duty);
-+  if (retval)
-+    goto error2;
-+  retval = device_create_file(&pdev->dev, &dev_attr_cycle);
-+  if (retval)
-+    goto error3;
-+
-+  if (pdev->id == 1) {
-+    /* Set PonG bit (PWM1 output on EGPIO pin) */
-+    ep93xx_devcfg_set_bits(EP93XX_SYSCON_DEVCFG_PONG);
-+  }
-+
-+  /* save clk for later use */
-+  pwm->clk = clk_get(&pdev->dev, "pwmclk");
-+  if (IS_ERR(pwm->clk)) {
-+    dev_err(&pdev->dev, "pwm clock not available\n");
-+    retval = PTR_ERR(pwm->clk);
-+    goto error4;
-+  }
-+
-+  pwm->duty_ratio = 500; // 50%
-+
-+  platform_set_drvdata(pdev, pwm);
-+
-+  /* disable pwmchannel at startup. Avoids zero value. */
-+  pwm_disable(pdev->id);
-+  pwm_write_cycle(pdev->id, EP93XX_PWM_MAX_CYCLE);
-+  pwm_write_duty(pdev->id, EP93XX_PWM_MAX_CYCLE/2);
-+
-+  clk_enable(pwm->clk);
-+  return 0;
-+
-+error4:
-+  device_remove_file(&pdev->dev, &dev_attr_cycle);
-+error3:
-+  device_remove_file(&pdev->dev, &dev_attr_duty);
-+error2:
-+  kfree(pwm);
-+error1:
-+  return retval;
++	return ep93xx_pwm_readl(pwm, EP93XX_PWMx_INVERT) & 0x1;
 +}
 +
-+static int pwm_ep93xx_remove(struct platform_device *pdev)
++/*
++ * /sys/devices/platform/ep93xx-pwm.N
++ *   /min_freq      read-only   minimum pwm output frequency
++ *   /max_req       read-only   maximum pwm output frequency
++ *   /freq          read-write  pwm output frequency (0 = disable output)
++ *   /duty_percent  read-write  pwm duty cycle percent (1..99)
++ *   /invert        read-write  invert pwm output
++ */
++
++static ssize_t ep93xx_pwm_get_min_freq(struct device *dev,
++		struct device_attribute *attr, char *buf)
 +{
-+  struct pwmchannel *pwm = platform_get_drvdata(pdev);
++	struct platform_device *pdev = to_platform_device(dev);
++	struct ep93xx_pwm *pwm = platform_get_drvdata(pdev);
++	unsigned long rate = clk_get_rate(pwm->clk);
 +
-+  /* remove device attribute files */
-+  device_remove_file(&pdev->dev, &dev_attr_cycle);
-+  device_remove_file(&pdev->dev, &dev_attr_duty);
-+
-+  platform_set_drvdata(pdev, NULL);
-+
-+  pwm_disable(pdev->id);
-+  clk_disable(pwm->clk);
-+  clk_put(pwm->clk);
-+
-+  if (pdev->id == 1) {
-+    ep93xx_devcfg_clear_bits(EP93XX_SYSCON_DEVCFG_PONG);
-+  }
-+
-+  return 0;
++	return sprintf(buf, "%ld\n", rate / (EP93XX_PWM_MAX_COUNT + 1));
 +}
 +
++static ssize_t ep93xx_pwm_get_max_freq(struct device *dev,
++		struct device_attribute *attr, char *buf)
++{
++	struct platform_device *pdev = to_platform_device(dev);
++	struct ep93xx_pwm *pwm = platform_get_drvdata(pdev);
++	unsigned long rate = clk_get_rate(pwm->clk);
 +
-+static struct platform_driver ep93xx_pwm_platform_driver = {
-+  .driver = {
-+    .name = "ep93xx-pwm",
-+    .bus = &platform_bus_type,
-+    .owner = THIS_MODULE,
-+  },
-+  .remove = __exit_p(pwm_ep93xx_remove),
++	return sprintf(buf, "%ld\n", rate / 2);
++}
++
++static ssize_t ep93xx_pwm_get_freq(struct device *dev,
++		struct device_attribute *attr, char *buf)
++{
++	struct platform_device *pdev = to_platform_device(dev);
++	struct ep93xx_pwm *pwm = platform_get_drvdata(pdev);
++
++	if (ep93xx_pwm_is_enabled(pwm)) {
++		unsigned long rate = clk_get_rate(pwm->clk);
++		u16 term = ep93xx_pwm_read_tc(pwm);
++
++		return sprintf(buf, "%ld\n", rate / (term + 1));
++	} else {
++		return sprintf(buf, "disabled\n");
++	}
++}
++
++static ssize_t ep93xx_pwm_set_freq(struct device *dev,
++		struct device_attribute *attr, const char *buf, size_t count)
++{
++	struct platform_device *pdev = to_platform_device(dev);
++	struct ep93xx_pwm *pwm = platform_get_drvdata(pdev);
++	long val;
++	int err;
++
++	err = strict_strtol(buf, 10, &val);
++	if (err)
++		return -EINVAL;
++
++	if (val == 0) {
++		ep93xx_pwm_disable(pwm);
++	} else if (val <= (clk_get_rate(pwm->clk) / 2)) {
++		u32 term, duty;
++
++		val = (clk_get_rate(pwm->clk) / val) - 1;
++		if (val > EP93XX_PWM_MAX_COUNT)
++			val = EP93XX_PWM_MAX_COUNT;
++		if (val < 1)
++			val = 1;
++
++		term = ep93xx_pwm_read_tc(pwm);
++		duty = ((val + 1) * pwm->duty_percent / 100) - 1;
++
++		/* If pwm is running, order is important */
++		if (val > term) {
++			ep93xx_pwm_write_tc(pwm, val);
++			ep93xx_pwm_write_dc(pwm, duty);
++		} else {
++			ep93xx_pwm_write_dc(pwm, duty);
++			ep93xx_pwm_write_tc(pwm, val);
++		}
++
++		if (!ep93xx_pwm_is_enabled(pwm))
++			ep93xx_pwm_enable(pwm);
++	} else {
++		return -EINVAL;
++	}
++
++	return count;
++}
++
++static ssize_t ep93xx_pwm_get_duty_percent(struct device *dev,
++		struct device_attribute *attr, char *buf)
++{
++	struct platform_device *pdev = to_platform_device(dev);
++	struct ep93xx_pwm *pwm = platform_get_drvdata(pdev);
++
++	return sprintf(buf, "%d\n", pwm->duty_percent);
++}
++
++static ssize_t ep93xx_pwm_set_duty_percent(struct device *dev,
++		struct device_attribute *attr, const char *buf, size_t count)
++{
++	struct platform_device *pdev = to_platform_device(dev);
++	struct ep93xx_pwm *pwm = platform_get_drvdata(pdev);
++	long val;
++	int err;
++
++	err = strict_strtol(buf, 10, &val);
++	if (err)
++		return -EINVAL;
++
++	if (val > 0 && val < 100) {
++		u32 term = ep93xx_pwm_read_tc(pwm);
++		ep93xx_pwm_write_dc(pwm, ((term + 1) * val / 100) - 1);
++		pwm->duty_percent = val;
++		return count;
++	}
++
++	return -EINVAL;
++}
++
++static ssize_t ep93xx_pwm_get_invert(struct device *dev,
++		struct device_attribute *attr, char *buf)
++{
++	struct platform_device *pdev = to_platform_device(dev);
++	struct ep93xx_pwm *pwm = platform_get_drvdata(pdev);
++
++	return sprintf(buf, "%d\n", ep93xx_pwm_is_inverted(pwm));
++}
++
++static ssize_t ep93xx_pwm_set_invert(struct device *dev,
++		struct device_attribute *attr, const char *buf, size_t count)
++{
++	struct platform_device *pdev = to_platform_device(dev);
++	struct ep93xx_pwm *pwm = platform_get_drvdata(pdev);
++	long val;
++	int err;
++
++	err = strict_strtol(buf, 10, &val);
++	if (err)
++		return -EINVAL;
++
++	if (val == 0)
++		ep93xx_pwm_normal(pwm);
++	else if (val == 1)
++		ep93xx_pwm_invert(pwm);
++	else
++		return -EINVAL;
++
++	return count;
++}
++
++static DEVICE_ATTR(min_freq, S_IRUGO, ep93xx_pwm_get_min_freq, NULL);
++static DEVICE_ATTR(max_freq, S_IRUGO, ep93xx_pwm_get_max_freq, NULL);
++static DEVICE_ATTR(freq, S_IWUGO | S_IRUGO,
++		   ep93xx_pwm_get_freq, ep93xx_pwm_set_freq);
++static DEVICE_ATTR(duty_percent, S_IWUGO | S_IRUGO,
++		   ep93xx_pwm_get_duty_percent, ep93xx_pwm_set_duty_percent);
++static DEVICE_ATTR(invert, S_IWUGO | S_IRUGO,
++		   ep93xx_pwm_get_invert, ep93xx_pwm_set_invert);
++
++static struct attribute *ep93xx_pwm_attrs[] = {
++	&dev_attr_min_freq.attr,
++	&dev_attr_max_freq.attr,
++	&dev_attr_freq.attr,
++	&dev_attr_duty_percent.attr,
++	&dev_attr_invert.attr,
++	NULL
 +};
 +
++static const struct attribute_group ep93xx_pwm_sysfs_files = {
++	.attrs	= ep93xx_pwm_attrs,
++};
 +
-+static int __init pwm_ep93xx_init(void)
++static int __init ep93xx_pwm_probe(struct platform_device *pdev)
 +{
-+	return platform_driver_probe(&ep93xx_pwm_platform_driver, pwm_ep93xx_probe);
++	struct ep93xx_pwm *pwm;
++	struct resource *res;
++	int err;
++
++	err = ep93xx_pwm_acquire_gpio(pdev);
++	if (err)
++		return err;
++
++	pwm = kzalloc(sizeof(struct ep93xx_pwm), GFP_KERNEL);
++	if (!pwm) {
++		err = -ENOMEM;
++		goto fail_no_mem;
++	}
++
++	res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
++	if (res == NULL) {
++		err = -ENXIO;
++		goto fail_no_mem_resource;
++	}
++
++	res = request_mem_region(res->start, resource_size(res), pdev->name);
++	if (res == NULL) {
++		err = -EBUSY;
++		goto fail_no_mem_resource;
++	}
++
++	pwm->mmio_base = ioremap(res->start, resource_size(res));
++	if (pwm->mmio_base == NULL) {
++		err = -ENXIO;
++		goto fail_no_ioremap;
++	}
++
++	err = sysfs_create_group(&pdev->dev.kobj, &ep93xx_pwm_sysfs_files);
++	if (err)
++		goto fail_no_sysfs;
++
++	pwm->clk = clk_get(&pdev->dev, "pwm_clk");
++	if (IS_ERR(pwm->clk)) {
++		err = PTR_ERR(pwm->clk);
++		goto fail_no_clk;
++	}
++
++	pwm->duty_percent = 50;
++
++	platform_set_drvdata(pdev, pwm);
++
++	/* disable pwm at startup. Avoids zero value. */
++	ep93xx_pwm_disable(pwm);
++	ep93xx_pwm_write_tc(pwm, EP93XX_PWM_MAX_COUNT);
++	ep93xx_pwm_write_dc(pwm, EP93XX_PWM_MAX_COUNT / 2);
++
++	clk_enable(pwm->clk);
++
++	return 0;
++
++fail_no_clk:
++	sysfs_remove_group(&pdev->dev.kobj, &ep93xx_pwm_sysfs_files);
++fail_no_sysfs:
++	iounmap(pwm->mmio_base);
++fail_no_ioremap:
++	release_mem_region(res->start, resource_size(res));
++fail_no_mem_resource:
++	kfree(pwm);
++fail_no_mem:
++	ep93xx_pwm_release_gpio(pdev);
++	return err;
 +}
 +
-+static void __exit pwm_ep93xx_exit(void)
++static int __exit ep93xx_pwm_remove(struct platform_device *pdev)
 +{
-+	platform_driver_unregister(&ep93xx_pwm_platform_driver);
++	struct ep93xx_pwm *pwm = platform_get_drvdata(pdev);
++	struct resource *res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
++
++	ep93xx_pwm_disable(pwm);
++	clk_disable(pwm->clk);
++	clk_put(pwm->clk);
++	platform_set_drvdata(pdev, NULL);
++	sysfs_remove_group(&pdev->dev.kobj, &ep93xx_pwm_sysfs_files);
++	iounmap(pwm->mmio_base);
++	release_mem_region(res->start, resource_size(res));
++	kfree(pwm);
++	ep93xx_pwm_release_gpio(pdev);
++
++	return 0;
 +}
 +
-+module_init(pwm_ep93xx_init);
-+module_exit(pwm_ep93xx_exit);
++static struct platform_driver ep93xx_pwm_driver = {
++	.driver		= {
++		.name	= "ep93xx-pwm",
++		.owner	= THIS_MODULE,
++	},
++	.remove		= __exit_p(ep93xx_pwm_remove),
++};
 +
-+MODULE_AUTHOR("Matthieu Crapet <mcrapet@gmail.com>");
++static int __init ep93xx_pwm_init(void)
++{
++	return platform_driver_probe(&ep93xx_pwm_driver, ep93xx_pwm_probe);
++}
++
++static void __exit ep93xx_pwm_exit(void)
++{
++	platform_driver_unregister(&ep93xx_pwm_driver);
++}
++
++module_init(ep93xx_pwm_init);
++module_exit(ep93xx_pwm_exit);
++
++MODULE_AUTHOR("Matthieu Crapet <mcrapet@gmail.com>, "
++	      "H Hartley Sweeten <hsweeten@visionengravers.com>");
 +MODULE_DESCRIPTION("EP93xx PWM driver");
 +MODULE_LICENSE("GPL");
-+MODULE_VERSION("0.11");
++MODULE_ALIAS("platform:ep93xx-pwm");
 diff --git a/drivers/misc/ts72xx_max197.c b/drivers/misc/ts72xx_max197.c
 new file mode 100644
 index 0000000..f989de6

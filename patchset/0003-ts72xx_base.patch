@@ -1,9 +1,12 @@
-From 4016bae62d363831ab8113b5af8d4e6e42f01e3b Mon Sep 17 00:00:00 2001
+From 7be63c8519a66ac0c580fee3096fc7ccc42f34c2 Mon Sep 17 00:00:00 2001
 From: Matthieu Crapet <mcrapet@gmail.com>
 Date: Sun, 5 Apr 2009 13:18:37 +0200
 Subject: [PATCH 03/25] ts72xx_base
 
-Added:
+v3:
+- include/mach/uncompress.h: restored original mainline version, uart clock are now correctly initialised (see clock.c)
+- include/mach/ts72xx.h: modified board_is_ts7xxx inline function (AND result with TS7XXX_MODEL_MASK)
+v2:
 - ep93xx:core.c: build warning fix
   http://www.arm.linux.org.uk/developer/patches/viewpatch.php?id=5451/1
 - ep93xx: core.c: trivial spelling error
@@ -15,13 +18,12 @@ Added:
  arch/arm/mach-ep93xx/Kconfig                    |    9 ++
  arch/arm/mach-ep93xx/core.c                     |   12 +--
  arch/arm/mach-ep93xx/include/mach/ep93xx-regs.h |   11 ++
- arch/arm/mach-ep93xx/include/mach/memory.h      |   28 ++++++
+ arch/arm/mach-ep93xx/include/mach/memory.h      |   28 +++++
  arch/arm/mach-ep93xx/include/mach/system.h      |    2 -
- arch/arm/mach-ep93xx/include/mach/ts72xx.h      |  116 +++++++++++++++++++++--
- arch/arm/mach-ep93xx/include/mach/uncompress.h  |   65 +++++++++++++
- arch/arm/mach-ep93xx/ts72xx.c                   |   35 +++++++-
+ arch/arm/mach-ep93xx/include/mach/ts72xx.h      |  126 +++++++++++++++++++++--
+ arch/arm/mach-ep93xx/ts72xx.c                   |   35 ++++++-
  arch/arm/mm/proc-arm920.S                       |    5 +-
- 11 files changed, 267 insertions(+), 19 deletions(-)
+ 10 files changed, 210 insertions(+), 21 deletions(-)
 
 diff --git a/arch/arm/Kconfig b/arch/arm/Kconfig
 index dbfdf87..5535acf 100644
@@ -217,10 +219,10 @@ index 8ffbe53..9af1fc7 100644
  
  	/*
 diff --git a/arch/arm/mach-ep93xx/include/mach/ts72xx.h b/arch/arm/mach-ep93xx/include/mach/ts72xx.h
-index 34ddec0..a8c8826 100644
+index 34ddec0..6d99118 100644
 --- a/arch/arm/mach-ep93xx/include/mach/ts72xx.h
 +++ b/arch/arm/mach-ep93xx/include/mach/ts72xx.h
-@@ -8,21 +8,34 @@
+@@ -8,21 +8,35 @@
   * virt		phys		size
   * febff000	22000000	4K	model number register
   * febfe000	22400000	4K	options register
@@ -256,10 +258,11 @@ index 34ddec0..a8c8826 100644
 +#define TS7XXX_MODEL_TS7260		0x02
 +#define TS7XXX_MODEL_TS7300		0x03
 +#define TS7XXX_MODEL_TS7400		0x04
++#define TS7XXX_MODEL_MASK		0x07
  
  
  #define TS72XX_OPTIONS_PHYS_BASE	0x22400000
-@@ -53,12 +66,13 @@
+@@ -53,12 +67,13 @@
  #define TS72XX_NAND2_CONTROL_PHYS_BASE	0x70400000
  #define TS72XX_NAND_CONTROL_VIRT_BASE	0xfebfb000
  #define TS72XX_NAND_CONTROL_SIZE	0x00001000
@@ -274,7 +277,7 @@ index 34ddec0..a8c8826 100644
  
  #define TS72XX_RTC_INDEX_VIRT_BASE	0xfebf9000
  #define TS72XX_RTC_INDEX_PHYS_BASE	0x10800000
-@@ -68,23 +82,92 @@
+@@ -68,34 +83,125 @@
  #define TS72XX_RTC_DATA_PHYS_BASE	0x11700000
  #define TS72XX_RTC_DATA_SIZE		0x00001000
  
@@ -349,128 +352,62 @@ index 34ddec0..a8c8826 100644
  static inline int board_is_ts7200(void)
  {
 -	return __raw_readb(TS72XX_MODEL_VIRT_BASE) == TS72XX_MODEL_TS7200;
-+	return __raw_readb(TS72XX_MODEL_VIRT_BASE) == TS7XXX_MODEL_TS7200;
++	return (__raw_readb(TS72XX_MODEL_VIRT_BASE) &
++			TS7XXX_MODEL_MASK) == TS7XXX_MODEL_TS7200;
  }
  
  static inline int board_is_ts7250(void)
  {
 -	return __raw_readb(TS72XX_MODEL_VIRT_BASE) == TS72XX_MODEL_TS7250;
-+	return __raw_readb(TS72XX_MODEL_VIRT_BASE) == TS7XXX_MODEL_TS7250;
++	return (__raw_readb(TS72XX_MODEL_VIRT_BASE) &
++			TS7XXX_MODEL_MASK) == TS7XXX_MODEL_TS7250;
  }
  
  static inline int board_is_ts7260(void)
  {
 -	return __raw_readb(TS72XX_MODEL_VIRT_BASE) == TS72XX_MODEL_TS7260;
-+	return __raw_readb(TS72XX_MODEL_VIRT_BASE) == TS7XXX_MODEL_TS7260;
++	return (__raw_readb(TS72XX_MODEL_VIRT_BASE) &
++			TS7XXX_MODEL_MASK) == TS7XXX_MODEL_TS7260;
 +}
 +
 +static inline int board_is_ts7400(void)
 +{
-+	return (__raw_readb(TS72XX_MODEL_VIRT_BASE) & 0xF) == TS7XXX_MODEL_TS7400;
++	return (__raw_readb(TS72XX_MODEL_VIRT_BASE) &
++			TS7XXX_MODEL_MASK) == TS7XXX_MODEL_TS7400;
  }
  
  static inline int is_max197_installed(void)
-@@ -98,4 +181,21 @@ static inline int is_ts9420_installed(void)
- 	return !!(__raw_readb(TS72XX_OPTIONS2_VIRT_BASE) &
- 					TS72XX_OPTIONS2_TS9420);
+ {
+ 	return !!(__raw_readb(TS72XX_OPTIONS_VIRT_BASE) &
+-					TS72XX_OPTIONS_MAX197);
++			TS72XX_OPTIONS_MAX197);
  }
+ 
+ static inline int is_ts9420_installed(void)
+ {
+ 	return !!(__raw_readb(TS72XX_OPTIONS2_VIRT_BASE) &
+-					TS72XX_OPTIONS2_TS9420);
++			TS72XX_OPTIONS2_TS9420);
++}
 +
 +static inline int is_rs485_installed(void)
 +{
 +	return !!(__raw_readb(TS72XX_OPTIONS_VIRT_BASE) &
-+					TS72XX_OPTIONS_COM2_RS485);
++			TS72XX_OPTIONS_COM2_RS485);
 +}
 +
 +static inline int get_ts72xx_pld_version(void)
 +{
 +	return (__raw_readb(TS72XX_PLD_VERSION_VIRT_BASE) & 0x7);
-+}
+ }
 +
++/* User jumper */
 +static inline int is_jp6_set(void)
 +{
 +	return (__raw_readb(TS72XX_OPTIONS2_VIRT_BASE) & 0x1);
 +}
 +
  #endif
-diff --git a/arch/arm/mach-ep93xx/include/mach/uncompress.h b/arch/arm/mach-ep93xx/include/mach/uncompress.h
-index 16026c2..b3a902f 100644
---- a/arch/arm/mach-ep93xx/include/mach/uncompress.h
-+++ b/arch/arm/mach-ep93xx/include/mach/uncompress.h
-@@ -86,9 +86,74 @@ static void ethernet_reset(void)
- }
- 
- 
-+/*
-+ * We don't have clock management for the UARTs (amba-pl010)
-+ * yet, so hackily enable all UART clocks here for now.
-+ */
-+#define PHYS_SYSCON_DEVICE_CONFIG	0x80930080
-+#define PHYS_SYSCON_SWLOCK		0x809300c0
-+
-+static void enable_all_uart_clocks(void)
-+{
-+	unsigned int v;
-+
-+	v = __raw_readl(PHYS_SYSCON_DEVICE_CONFIG);
-+	__raw_writel(0xaa, PHYS_SYSCON_SWLOCK);
-+	__raw_writel(v | 0x01140000, PHYS_SYSCON_DEVICE_CONFIG);
-+}
-+
-+
-+/*
-+ * Some bootloaders don't turn on the UARTBAUD bit, which means that
-+ * the UARTs will be running off a divided 7.3728 MHz clock instead of
-+ * the 14.7456 MHz peripheral clock when linux boots.
-+ *
-+ * We detect that condition here and fix it by turning on UARTBAUD, and
-+ * then reprogramming the divisors on all enabled UARTs to twice what
-+ * they were before we turned UARTBAUD on, to preserve the programmed
-+ * baud rate.
-+ */
-+#define PHYS_SYSCON_CLOCK_CONTROL	0x80930004
-+#define SYSCON_CLOCK_UARTBAUD		0x20000000
-+#define PHYS_UART1_BASE			0x808c0000
-+#define PHYS_UART2_BASE			0x808d0000
-+#define PHYS_UART3_BASE			0x808e0000
-+
-+static void uart_divisor_times_two(unsigned int base)
-+{
-+	u16 divisor;
-+
-+	divisor = __raw_readb(base + 0x0c) << 8;
-+	divisor |= __raw_readb(base + 0x10);
-+	if (divisor) {
-+		divisor = (2 * (divisor + 1)) - 1;
-+		__raw_writeb(divisor >> 8, base + 0x0c);
-+		__raw_writeb(divisor & 0xff, base + 0x10);
-+		__raw_writeb(__raw_readb(base + 0x08), base + 0x08);
-+	}
-+}
-+
-+static void fix_uart_base(void)
-+{
-+	unsigned int v;
-+
-+	v = __raw_readl(PHYS_SYSCON_CLOCK_CONTROL);
-+	if ((v & SYSCON_CLOCK_UARTBAUD) == 0) {
-+		v |= SYSCON_CLOCK_UARTBAUD;
-+		__raw_writel(v, PHYS_SYSCON_CLOCK_CONTROL);
-+
-+		uart_divisor_times_two(PHYS_UART1_BASE);
-+		uart_divisor_times_two(PHYS_UART2_BASE);
-+		uart_divisor_times_two(PHYS_UART3_BASE);
-+	}
-+}
-+
-+
- static void arch_decomp_setup(void)
- {
- 	ethernet_reset();
-+	enable_all_uart_clocks();
-+	fix_uart_base();
- }
- 
- #define arch_decomp_wdog()
 diff --git a/arch/arm/mach-ep93xx/ts72xx.c b/arch/arm/mach-ep93xx/ts72xx.c
 index 7ee024d..3dbae74 100644
 --- a/arch/arm/mach-ep93xx/ts72xx.c

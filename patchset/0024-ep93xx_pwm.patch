@@ -1,22 +1,25 @@
-From c6b26015f25002145a314644016332a2a5df78c3 Mon Sep 17 00:00:00 2001
+From ca8b410f12ff7b74d869df8e92474466b5d105b1 Mon Sep 17 00:00:00 2001
 From: Matthieu Crapet <mcrapet@gmail.com>
 Date: Thu, 21 May 2009 12:20:33 +0200
 Subject: [PATCH 24/25] ep93xx_pwm
 
-- now use correctly IS_ERR, PTR_ERR
-- added missing clk_put in remove function
+Based on:
+ep93xx: Introduce Pulse Width Modulator (PWM) driver
+http://www.arm.linux.org.uk/developer/patches/viewpatch.php?id=5628/1
 ---
  arch/arm/mach-ep93xx/clock.c                    |    5 +
- arch/arm/mach-ep93xx/include/mach/ep93xx-regs.h |    9 +
- arch/arm/mach-ep93xx/ts72xx.c                   |    5 +
- drivers/misc/Kconfig                            |    7 +
+ arch/arm/mach-ep93xx/core.c                     |   85 +++++
+ arch/arm/mach-ep93xx/include/mach/ep93xx-regs.h |    1 +
+ arch/arm/mach-ep93xx/include/mach/platform.h    |    5 +
+ arch/arm/mach-ep93xx/ts72xx.c                   |    3 +
+ drivers/misc/Kconfig                            |   13 +
  drivers/misc/Makefile                           |    1 +
- drivers/misc/ep93xx_pwm.c                       |  260 +++++++++++++++++++++++
- 6 files changed, 287 insertions(+), 0 deletions(-)
+ drivers/misc/ep93xx_pwm.c                       |  384 +++++++++++++++++++++++
+ 8 files changed, 497 insertions(+), 0 deletions(-)
  create mode 100644 drivers/misc/ep93xx_pwm.c
 
 diff --git a/arch/arm/mach-ep93xx/clock.c b/arch/arm/mach-ep93xx/clock.c
-index 0ae2740..fe8efc6 100644
+index 0ae2740..c4ce0fb 100644
 --- a/arch/arm/mach-ep93xx/clock.c
 +++ b/arch/arm/mach-ep93xx/clock.c
 @@ -50,6 +50,10 @@ static struct clk clk_ssp = {
@@ -34,51 +37,160 @@ index 0ae2740..fe8efc6 100644
  	INIT_CK(NULL, "pll2", &clk_pll2),
  	INIT_CK(NULL, "usb_host", &clk_usb_host),
  	INIT_CK(NULL, "sspclk", &clk_ssp),
-+	INIT_CK(NULL, "pwmclk", &clk_pwm),
++	INIT_CK(NULL, "pwm_clk", &clk_pwm),
  };
  
  
+diff --git a/arch/arm/mach-ep93xx/core.c b/arch/arm/mach-ep93xx/core.c
+index 7983a3b..445ef0d 100644
+--- a/arch/arm/mach-ep93xx/core.c
++++ b/arch/arm/mach-ep93xx/core.c
+@@ -424,6 +424,91 @@ EXPORT_SYMBOL(ep93xx_devcfg_set_clear);
+ 
+ 
+ /*************************************************************************
++ * EP93xx pwm peripheral handling
++ *************************************************************************/
++static struct resource ep93xx_pwm0_resource[] = {
++	{
++		.start	= EP93XX_PWM_PHYS_BASE,
++		.end	= EP93XX_PWM_PHYS_BASE + 0x10 - 1,
++		.flags	= IORESOURCE_MEM,
++	},
++};
++
++static struct platform_device ep93xx_pwm0_device = {
++	.name		= "ep93xx-pwm",
++	.id		= 0,
++	.num_resources	= ARRAY_SIZE(ep93xx_pwm0_resource),
++	.resource	= ep93xx_pwm0_resource,
++};
++
++static struct resource ep93xx_pwm1_resource[] = {
++	{
++		.start	= EP93XX_PWM_PHYS_BASE + 0x20,
++		.end	= EP93XX_PWM_PHYS_BASE + 0x30 - 1,
++		.flags	= IORESOURCE_MEM,
++	},
++};
++
++static struct platform_device ep93xx_pwm1_device = {
++	.name		= "ep93xx-pwm",
++	.id		= 1,
++	.num_resources	= ARRAY_SIZE(ep93xx_pwm1_resource),
++	.resource	= ep93xx_pwm1_resource,
++};
++
++void __init ep93xx_register_pwm(int pwm0, int pwm1)
++{
++	if (pwm0)
++		platform_device_register(&ep93xx_pwm0_device);
++
++	/* NOTE: EP9307 does not have PWMOUT1 (pin EGPIO14) */
++	if (pwm1)
++		platform_device_register(&ep93xx_pwm1_device);
++}
++
++int ep93xx_pwm_acquire_gpio(struct platform_device *pdev)
++{
++	int err;
++
++	if (pdev->id == 0) {
++		err = 0;
++	} else if (pdev->id == 1) {
++		err = gpio_request(EP93XX_GPIO_LINE_EGPIO14,
++				   dev_name(&pdev->dev));
++		if (err)
++			return err;
++		err = gpio_direction_output(EP93XX_GPIO_LINE_EGPIO14, 0);
++		if (err)
++			goto fail;
++
++		/* PWM 1 output on EGPIO[14] */
++		ep93xx_devcfg_set_bits(EP93XX_SYSCON_DEVCFG_PONG);
++	} else {
++		err = -ENODEV;
++	}
++
++	return err;
++
++fail:
++	gpio_free(EP93XX_GPIO_LINE_EGPIO14);
++	return err;
++}
++EXPORT_SYMBOL(ep93xx_pwm_acquire_gpio);
++
++void ep93xx_pwm_release_gpio(struct platform_device *pdev)
++{
++	if (pdev->id == 1) {
++		gpio_direction_input(EP93XX_GPIO_LINE_EGPIO14);
++		gpio_free(EP93XX_GPIO_LINE_EGPIO14);
++
++		/* EGPIO[14] used for GPIO */
++		ep93xx_devcfg_clear_bits(EP93XX_SYSCON_DEVCFG_PONG);
++	}
++}
++EXPORT_SYMBOL(ep93xx_pwm_release_gpio);
++
++
++/*************************************************************************
+  * EP93xx peripheral handling
+  *************************************************************************/
+ #define EP93XX_UART_MCR_OFFSET		(0x0100)
 diff --git a/arch/arm/mach-ep93xx/include/mach/ep93xx-regs.h b/arch/arm/mach-ep93xx/include/mach/ep93xx-regs.h
-index a15296c..36c23fb 100644
+index a15296c..5af069a 100644
 --- a/arch/arm/mach-ep93xx/include/mach/ep93xx-regs.h
 +++ b/arch/arm/mach-ep93xx/include/mach/ep93xx-regs.h
-@@ -154,6 +154,15 @@
+@@ -154,6 +154,7 @@
  #define EP93XX_TOUCHSCREEN_BASE		(EP93XX_APB_VIRT_BASE + 0x00100000)
  
  #define EP93XX_PWM_BASE			(EP93XX_APB_VIRT_BASE + 0x00110000)
-+#define EP93XX_PWM_REG(x)		(EP93XX_PWM_BASE + (x))
-+#define EP93XX_PWM0_CYCLE		EP93XX_PWM_REG(0x00)
-+#define EP93XX_PWM0_DUTY		EP93XX_PWM_REG(0x04)
-+#define EP93XX_PWM0_EN		EP93XX_PWM_REG(0x08)
-+#define EP93XX_PWM0_INV		EP93XX_PWM_REG(0x0C)
-+#define EP93XX_PWM1_CYCLE		EP93XX_PWM_REG(0x20)
-+#define EP93XX_PWM1_DUTY		EP93XX_PWM_REG(0x24)
-+#define EP93XX_PWM1_EN		EP93XX_PWM_REG(0x28)
-+#define EP93XX_PWM1_INV		EP93XX_PWM_REG(0x2C)
++#define EP93XX_PWM_PHYS_BASE		(EP93XX_APB_PHYS_BASE + 0x00110000)
  
  #define EP93XX_RTC_BASE			(EP93XX_APB_VIRT_BASE + 0x00120000)
  
+diff --git a/arch/arm/mach-ep93xx/include/mach/platform.h b/arch/arm/mach-ep93xx/include/mach/platform.h
+index 8ed8fb6..3bbdc7f 100644
+--- a/arch/arm/mach-ep93xx/include/mach/platform.h
++++ b/arch/arm/mach-ep93xx/include/mach/platform.h
+@@ -5,6 +5,7 @@
+ #ifndef __ASSEMBLY__
+ 
+ struct i2c_board_info;
++struct platform_device;
+ 
+ struct ep93xx_eth_data
+ {
+@@ -19,6 +20,10 @@ void ep93xx_syscon_swlocked_write(unsigned int reg, unsigned int val);
+ void ep93xx_devcfg_set_clear(unsigned int set_bits, unsigned int clear_bits);
+ void ep93xx_register_eth(struct ep93xx_eth_data *data, int copy_addr);
+ void ep93xx_register_i2c(struct i2c_board_info *devices, int num);
++void ep93xx_register_pwm(int pwm0, int pwm1);
++int ep93xx_pwm_acquire_gpio(struct platform_device *pdev);
++void ep93xx_pwm_release_gpio(struct platform_device *pdev);
++
+ void ep93xx_init_devices(void);
+ extern struct sys_timer ep93xx_timer;
+ 
 diff --git a/arch/arm/mach-ep93xx/ts72xx.c b/arch/arm/mach-ep93xx/ts72xx.c
-index 086d069..95c49ff 100644
+index 086d069..ee7baeb 100644
 --- a/arch/arm/mach-ep93xx/ts72xx.c
 +++ b/arch/arm/mach-ep93xx/ts72xx.c
-@@ -303,6 +303,11 @@ static void __init ts72xx_init_machine(void)
+@@ -303,6 +303,9 @@ static void __init ts72xx_init_machine(void)
  	spi_register_board_info(ts72xx_spi_bus, ARRAY_SIZE(ts72xx_spi_bus));
  	#endif
  
-+	// DIO_6 on TS-72xx header
-+	#if defined(CONFIG_EP93XX_PWM) || defined(CONFIG_EP93XX_PWM_MODULE)
-+	(void) platform_device_register_simple("ep93xx-pwm", 1, NULL, 0);
-+	#endif
++	/* PWM1 is DIO_6 on TS-72xx header */
++	ep93xx_register_pwm(1, 1);
 +
  	ep93xx_register_eth(&ts72xx_eth_data, 1);
  }
  
 diff --git a/drivers/misc/Kconfig b/drivers/misc/Kconfig
-index 009a30c..c4b300a 100644
+index 009a30c..cd377a3 100644
 --- a/drivers/misc/Kconfig
 +++ b/drivers/misc/Kconfig
-@@ -226,6 +226,13 @@ config DELL_LAPTOP
+@@ -226,6 +226,19 @@ config DELL_LAPTOP
  source "drivers/misc/c2port/Kconfig"
  source "drivers/misc/eeprom/Kconfig"
  
@@ -86,8 +198,14 @@ index 009a30c..c4b300a 100644
 +	tristate "EP93xx PWM support"
 +	depends on ARCH_EP93XX
 +	help
-+	  This option enables device driver support for the PWM channels.
-+	  sysfs entries are added to control count and duty cycle.
++	  This option enables device driver support for the PWM channels
++	  on the Cirrus EP93xx processors.  The EP9307 chip only has one
++	  PWM channel all the others have two, the second channel is an
++	  alternate function of the EGPIO14 pin.  A sysfs interface is
++	  provided to control the PWM channels.
++
++	  To compile this driver as a module, choose M here: the module will
++	  be called ep93xx_pwm.
 +
  config TS72XX_MAX197
  	tristate "TS-72xx MAX197 support"
@@ -105,270 +223,394 @@ index 3139ca9..42a47d8 100644
  obj-y				+= eeprom/
 diff --git a/drivers/misc/ep93xx_pwm.c b/drivers/misc/ep93xx_pwm.c
 new file mode 100644
-index 0000000..82fa596
+index 0000000..ba46941
 --- /dev/null
 +++ b/drivers/misc/ep93xx_pwm.c
-@@ -0,0 +1,260 @@
+@@ -0,0 +1,384 @@
 +/*
 + *  Simple PWM driver for EP93XX
 + *
 + *	(c) Copyright 2009  Matthieu Crapet <mcrapet@gmail.com>
++ *	(c) Copyright 2009  H Hartley Sweeten <hsweeten@visionengravers.com>
 + *
 + *	This program is free software; you can redistribute it and/or
 + *	modify it under the terms of the GNU General Public License
 + *	as published by the Free Software Foundation; either version
 + *	2 of the License, or (at your option) any later version.
 + *
-+ *  EP93XX has only two channels:
++ *  EP9307 has only one channel:
 + *    - PWMOUT
-+ *    - PWM1 (alternate function for EGPIO14)
++ *
++ *  EP9301/02/12/15 have two channels:
++ *    - PWMOUT
++ *    - PWMOUT1 (alternate function for EGPIO14)
 + */
 +
 +#include <linux/module.h>
-+#include <linux/kernel.h>
-+#include <linux/init.h>
++#include <linux/platform_device.h>
 +#include <linux/clk.h>
 +#include <linux/err.h>
-+#include <linux/platform_device.h>
-+#include <mach/hardware.h>
++#include <linux/io.h>
 +
++#include <mach/platform.h>
 +
-+#define EP93XX_PWM_MAX_CYCLE 0xFFFF /* 16-bit */
++#define EP93XX_PWMx_TERM_COUNT	0x00
++#define EP93XX_PWMx_DUTY_CYCLE	0x04
++#define EP93XX_PWMx_ENABLE	0x08
++#define EP93XX_PWMx_INVERT	0x0C
 +
-+struct pwmchannel
-+{
-+  struct clk *clk;
-+  u32 duty_ratio; // permil (1..999)
++#define EP93XX_PWM_MAX_COUNT	0xFFFF
++
++struct ep93xx_pwm {
++	void __iomem	*mmio_base;
++	struct clk	*clk;
++	u32		duty_percent;
 +};
 +
-+
-+/* Low-level access to PWM */
-+
-+static inline void pwm_enable(int index)
++static inline void ep93xx_pwm_writel(struct ep93xx_pwm *pwm,
++		unsigned int val, unsigned int off)
 +{
-+  __raw_writel(1, (index) ? EP93XX_PWM1_EN : EP93XX_PWM0_EN);
++	__raw_writel(val, pwm->mmio_base + off);
 +}
 +
-+static inline void pwm_disable(int index)
++static inline unsigned int ep93xx_pwm_readl(struct ep93xx_pwm *pwm,
++		unsigned int off)
 +{
-+  __raw_writel(0, (index) ? EP93XX_PWM1_EN : EP93XX_PWM0_EN);
++	return __raw_readl(pwm->mmio_base + off);
 +}
 +
-+static inline int pwm_is_enabled(int index)
++static inline void ep93xx_pwm_write_tc(struct ep93xx_pwm *pwm, u16 value)
 +{
-+  return (__raw_readl((index) ? EP93XX_PWM1_EN : EP93XX_PWM0_EN) & 1);
++	ep93xx_pwm_writel(pwm, value, EP93XX_PWMx_TERM_COUNT);
 +}
 +
-+static inline void pwm_write_cycle(int index, u16 value)
++static inline u16 ep93xx_pwm_read_tc(struct ep93xx_pwm *pwm)
 +{
-+  __raw_writel(value, (index) ? EP93XX_PWM1_CYCLE : EP93XX_PWM0_CYCLE);
++	return ep93xx_pwm_readl(pwm, EP93XX_PWMx_TERM_COUNT);
 +}
 +
-+static inline void pwm_write_duty(int index, u16 value)
++static inline void ep93xx_pwm_write_dc(struct ep93xx_pwm *pwm, u16 value)
 +{
-+  __raw_writel(value, (index) ? EP93XX_PWM1_DUTY : EP93XX_PWM0_DUTY);
++	ep93xx_pwm_writel(pwm, value, EP93XX_PWMx_DUTY_CYCLE);
 +}
 +
-+static inline u16 pwm_read_cycle(int index)
++static inline void ep93xx_pwm_enable(struct ep93xx_pwm *pwm)
 +{
-+  return __raw_readl((index) ? EP93XX_PWM1_CYCLE : EP93XX_PWM0_CYCLE);
++	ep93xx_pwm_writel(pwm, 0x1, EP93XX_PWMx_ENABLE);
 +}
 +
-+
-+/* sysfs entries */
-+
-+static ssize_t pwm_get_duty(struct device *dev,
-+    struct device_attribute *attr, char *buf)
++static inline void ep93xx_pwm_disable(struct ep93xx_pwm *pwm)
 +{
-+  struct platform_device *pdev = to_platform_device(dev);
-+  struct pwmchannel *pwm = platform_get_drvdata(pdev);
-+
-+  return sprintf(buf, "%d%%\n", pwm->duty_ratio / 10);
++	ep93xx_pwm_writel(pwm, 0x0, EP93XX_PWMx_ENABLE);
 +}
 +
-+static ssize_t pwm_set_duty(struct device *dev,
-+    struct device_attribute *attr,
-+    const char *buf, size_t count)
++static inline int ep93xx_pwm_is_enabled(struct ep93xx_pwm *pwm)
 +{
-+  struct platform_device *pdev = to_platform_device(dev);
-+  struct pwmchannel *pwm = platform_get_drvdata(pdev);
-+  long val = simple_strtol(buf, NULL, 10);
-+
-+  if (val > 0 && val < 100)
-+  {
-+    u32 count = pwm_read_cycle(pdev->id);
-+    pwm_write_duty(pdev->id, (u16)(count * val / 100));
-+    pwm->duty_ratio = 10*val;
-+    return count;
-+  }
-+
-+  return -EINVAL;
++	return ep93xx_pwm_readl(pwm, EP93XX_PWMx_ENABLE) & 0x1;
 +}
 +
-+static ssize_t pwm_get_cycle(struct device *dev,
-+    struct device_attribute *attr, char *buf)
++static inline void ep93xx_pwm_invert(struct ep93xx_pwm *pwm)
 +{
-+  struct platform_device *pdev = to_platform_device(dev);
-+  struct pwmchannel *pwm = platform_get_drvdata(pdev);
-+
-+  if (pwm_is_enabled(pdev->id))
-+    return sprintf(buf, "%ld Hz\n",
-+        clk_get_rate(pwm->clk) / pwm_read_cycle(pdev->id));
-+  else
-+    return sprintf(buf, "disabled\n");
++	ep93xx_pwm_writel(pwm, 0x1, EP93XX_PWMx_INVERT);
 +}
 +
-+static ssize_t pwm_set_cycle(struct device *dev,
-+    struct device_attribute *attr,
-+    const char *buf, size_t count)
++static inline void ep93xx_pwm_normal(struct ep93xx_pwm *pwm)
 +{
-+  struct platform_device *pdev = to_platform_device(dev);
-+  struct pwmchannel *pwm = platform_get_drvdata(pdev);
-+  long val = simple_strtol(buf, NULL, 10);
-+
-+  if (val == 0) {
-+    pwm_disable(pdev->id);
-+  } else if (val > 0 && val <= clk_get_rate(pwm->clk)) {
-+    u32 old_count, new_duty;
-+
-+    val = clk_get_rate(pwm->clk) / val;
-+
-+    if (val > EP93XX_PWM_MAX_CYCLE)
-+      val = EP93XX_PWM_MAX_CYCLE;
-+
-+    old_count = pwm_read_cycle(pdev->id);
-+    new_duty = val * pwm->duty_ratio / 1000;
-+
-+    /* if pwm is running, order is important */
-+    if (val > old_count) {
-+      pwm_write_cycle(pdev->id, (u16)val);
-+      pwm_write_duty(pdev->id, (u16)new_duty);
-+    } else {
-+      pwm_write_duty(pdev->id, (u16)new_duty);
-+      pwm_write_cycle(pdev->id, (u16)val);
-+    }
-+
-+    if (!pwm_is_enabled(pdev->id))
-+      pwm_enable(pdev->id);
-+
-+  } else {
-+    return -EINVAL;
-+  }
-+
-+  return count;
++	ep93xx_pwm_writel(pwm, 0x0, EP93XX_PWMx_INVERT);
 +}
 +
-+static DEVICE_ATTR(duty, S_IWUGO | S_IRUGO, pwm_get_duty, pwm_set_duty);
-+static DEVICE_ATTR(cycle, S_IWUGO | S_IRUGO, pwm_get_cycle, pwm_set_cycle);
-+
-+
-+static int __init pwm_ep93xx_probe(struct platform_device *pdev)
++static inline int ep93xx_pwm_is_inverted(struct ep93xx_pwm *pwm)
 +{
-+  struct pwmchannel *pwm;
-+  int retval;
-+
-+  if ((pdev->id != 0) && (pdev->id != 1)) {
-+    dev_err(&pdev->dev, "PWM id is not valid\n");
-+    return -ENODEV;
-+  }
-+
-+  pwm = kzalloc(sizeof(*pwm), GFP_KERNEL);
-+  if (!pwm) {
-+    retval = -ENOMEM;
-+    goto error1;
-+  }
-+
-+  retval = device_create_file(&pdev->dev, &dev_attr_duty);
-+  if (retval)
-+    goto error2;
-+  retval = device_create_file(&pdev->dev, &dev_attr_cycle);
-+  if (retval)
-+    goto error3;
-+
-+  if (pdev->id == 1) {
-+    /* Set PonG bit (PWM1 output on EGPIO pin) */
-+    ep93xx_devcfg_set_bits(EP93XX_SYSCON_DEVCFG_PONG);
-+  }
-+
-+  /* save clk for later use */
-+  pwm->clk = clk_get(&pdev->dev, "pwmclk");
-+  if (IS_ERR(pwm->clk)) {
-+    dev_err(&pdev->dev, "pwm clock not available\n");
-+    retval = PTR_ERR(pwm->clk);
-+    goto error4;
-+  }
-+
-+  pwm->duty_ratio = 500; // 50%
-+
-+  platform_set_drvdata(pdev, pwm);
-+
-+  /* disable pwmchannel at startup. Avoids zero value. */
-+  pwm_disable(pdev->id);
-+  pwm_write_cycle(pdev->id, EP93XX_PWM_MAX_CYCLE);
-+  pwm_write_duty(pdev->id, EP93XX_PWM_MAX_CYCLE/2);
-+
-+  clk_enable(pwm->clk);
-+  return 0;
-+
-+error4:
-+  device_remove_file(&pdev->dev, &dev_attr_cycle);
-+error3:
-+  device_remove_file(&pdev->dev, &dev_attr_duty);
-+error2:
-+  kfree(pwm);
-+error1:
-+  return retval;
++	return ep93xx_pwm_readl(pwm, EP93XX_PWMx_INVERT) & 0x1;
 +}
 +
-+static int pwm_ep93xx_remove(struct platform_device *pdev)
++/*
++ * /sys/devices/platform/ep93xx-pwm.N
++ *   /min_freq      read-only   minimum pwm output frequency
++ *   /max_req       read-only   maximum pwm output frequency
++ *   /freq          read-write  pwm output frequency (0 = disable output)
++ *   /duty_percent  read-write  pwm duty cycle percent (1..99)
++ *   /invert        read-write  invert pwm output
++ */
++
++static ssize_t ep93xx_pwm_get_min_freq(struct device *dev,
++		struct device_attribute *attr, char *buf)
 +{
-+  struct pwmchannel *pwm = platform_get_drvdata(pdev);
++	struct platform_device *pdev = to_platform_device(dev);
++	struct ep93xx_pwm *pwm = platform_get_drvdata(pdev);
++	unsigned long rate = clk_get_rate(pwm->clk);
 +
-+  /* remove device attribute files */
-+  device_remove_file(&pdev->dev, &dev_attr_cycle);
-+  device_remove_file(&pdev->dev, &dev_attr_duty);
-+
-+  platform_set_drvdata(pdev, NULL);
-+
-+  pwm_disable(pdev->id);
-+  clk_disable(pwm->clk);
-+  clk_put(pwm->clk);
-+
-+  if (pdev->id == 1) {
-+    ep93xx_devcfg_clear_bits(EP93XX_SYSCON_DEVCFG_PONG);
-+  }
-+
-+  return 0;
++	return sprintf(buf, "%ld\n", rate / (EP93XX_PWM_MAX_COUNT + 1));
 +}
 +
++static ssize_t ep93xx_pwm_get_max_freq(struct device *dev,
++		struct device_attribute *attr, char *buf)
++{
++	struct platform_device *pdev = to_platform_device(dev);
++	struct ep93xx_pwm *pwm = platform_get_drvdata(pdev);
++	unsigned long rate = clk_get_rate(pwm->clk);
 +
-+static struct platform_driver ep93xx_pwm_platform_driver = {
-+  .driver = {
-+    .name = "ep93xx-pwm",
-+    .bus = &platform_bus_type,
-+    .owner = THIS_MODULE,
-+  },
-+  .remove = __exit_p(pwm_ep93xx_remove),
++	return sprintf(buf, "%ld\n", rate / 2);
++}
++
++static ssize_t ep93xx_pwm_get_freq(struct device *dev,
++		struct device_attribute *attr, char *buf)
++{
++	struct platform_device *pdev = to_platform_device(dev);
++	struct ep93xx_pwm *pwm = platform_get_drvdata(pdev);
++
++	if (ep93xx_pwm_is_enabled(pwm)) {
++		unsigned long rate = clk_get_rate(pwm->clk);
++		u16 term = ep93xx_pwm_read_tc(pwm);
++
++		return sprintf(buf, "%ld\n", rate / (term + 1));
++	} else {
++		return sprintf(buf, "disabled\n");
++	}
++}
++
++static ssize_t ep93xx_pwm_set_freq(struct device *dev,
++		struct device_attribute *attr, const char *buf, size_t count)
++{
++	struct platform_device *pdev = to_platform_device(dev);
++	struct ep93xx_pwm *pwm = platform_get_drvdata(pdev);
++	long val;
++	int err;
++
++	err = strict_strtol(buf, 10, &val);
++	if (err)
++		return -EINVAL;
++
++	if (val == 0) {
++		ep93xx_pwm_disable(pwm);
++	} else if (val <= (clk_get_rate(pwm->clk) / 2)) {
++		u32 term, duty;
++
++		val = (clk_get_rate(pwm->clk) / val) - 1;
++		if (val > EP93XX_PWM_MAX_COUNT)
++			val = EP93XX_PWM_MAX_COUNT;
++		if (val < 1)
++			val = 1;
++
++		term = ep93xx_pwm_read_tc(pwm);
++		duty = ((val + 1) * pwm->duty_percent / 100) - 1;
++
++		/* If pwm is running, order is important */
++		if (val > term) {
++			ep93xx_pwm_write_tc(pwm, val);
++			ep93xx_pwm_write_dc(pwm, duty);
++		} else {
++			ep93xx_pwm_write_dc(pwm, duty);
++			ep93xx_pwm_write_tc(pwm, val);
++		}
++
++		if (!ep93xx_pwm_is_enabled(pwm))
++			ep93xx_pwm_enable(pwm);
++	} else {
++		return -EINVAL;
++	}
++
++	return count;
++}
++
++static ssize_t ep93xx_pwm_get_duty_percent(struct device *dev,
++		struct device_attribute *attr, char *buf)
++{
++	struct platform_device *pdev = to_platform_device(dev);
++	struct ep93xx_pwm *pwm = platform_get_drvdata(pdev);
++
++	return sprintf(buf, "%d\n", pwm->duty_percent);
++}
++
++static ssize_t ep93xx_pwm_set_duty_percent(struct device *dev,
++		struct device_attribute *attr, const char *buf, size_t count)
++{
++	struct platform_device *pdev = to_platform_device(dev);
++	struct ep93xx_pwm *pwm = platform_get_drvdata(pdev);
++	long val;
++	int err;
++
++	err = strict_strtol(buf, 10, &val);
++	if (err)
++		return -EINVAL;
++
++	if (val > 0 && val < 100) {
++		u32 term = ep93xx_pwm_read_tc(pwm);
++		ep93xx_pwm_write_dc(pwm, ((term + 1) * val / 100) - 1);
++		pwm->duty_percent = val;
++		return count;
++	}
++
++	return -EINVAL;
++}
++
++static ssize_t ep93xx_pwm_get_invert(struct device *dev,
++		struct device_attribute *attr, char *buf)
++{
++	struct platform_device *pdev = to_platform_device(dev);
++	struct ep93xx_pwm *pwm = platform_get_drvdata(pdev);
++
++	return sprintf(buf, "%d\n", ep93xx_pwm_is_inverted(pwm));
++}
++
++static ssize_t ep93xx_pwm_set_invert(struct device *dev,
++		struct device_attribute *attr, const char *buf, size_t count)
++{
++	struct platform_device *pdev = to_platform_device(dev);
++	struct ep93xx_pwm *pwm = platform_get_drvdata(pdev);
++	long val;
++	int err;
++
++	err = strict_strtol(buf, 10, &val);
++	if (err)
++		return -EINVAL;
++
++	if (val == 0)
++		ep93xx_pwm_normal(pwm);
++	else if (val == 1)
++		ep93xx_pwm_invert(pwm);
++	else
++		return -EINVAL;
++
++	return count;
++}
++
++static DEVICE_ATTR(min_freq, S_IRUGO, ep93xx_pwm_get_min_freq, NULL);
++static DEVICE_ATTR(max_freq, S_IRUGO, ep93xx_pwm_get_max_freq, NULL);
++static DEVICE_ATTR(freq, S_IWUGO | S_IRUGO,
++		   ep93xx_pwm_get_freq, ep93xx_pwm_set_freq);
++static DEVICE_ATTR(duty_percent, S_IWUGO | S_IRUGO,
++		   ep93xx_pwm_get_duty_percent, ep93xx_pwm_set_duty_percent);
++static DEVICE_ATTR(invert, S_IWUGO | S_IRUGO,
++		   ep93xx_pwm_get_invert, ep93xx_pwm_set_invert);
++
++static struct attribute *ep93xx_pwm_attrs[] = {
++	&dev_attr_min_freq.attr,
++	&dev_attr_max_freq.attr,
++	&dev_attr_freq.attr,
++	&dev_attr_duty_percent.attr,
++	&dev_attr_invert.attr,
++	NULL
 +};
 +
++static const struct attribute_group ep93xx_pwm_sysfs_files = {
++	.attrs	= ep93xx_pwm_attrs,
++};
 +
-+static int __init pwm_ep93xx_init(void)
++static int __init ep93xx_pwm_probe(struct platform_device *pdev)
 +{
-+	return platform_driver_probe(&ep93xx_pwm_platform_driver, pwm_ep93xx_probe);
++	struct ep93xx_pwm *pwm;
++	struct resource *res;
++	int err;
++
++	err = ep93xx_pwm_acquire_gpio(pdev);
++	if (err)
++		return err;
++
++	pwm = kzalloc(sizeof(struct ep93xx_pwm), GFP_KERNEL);
++	if (!pwm) {
++		err = -ENOMEM;
++		goto fail_no_mem;
++	}
++
++	res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
++	if (res == NULL) {
++		err = -ENXIO;
++		goto fail_no_mem_resource;
++	}
++
++	res = request_mem_region(res->start, resource_size(res), pdev->name);
++	if (res == NULL) {
++		err = -EBUSY;
++		goto fail_no_mem_resource;
++	}
++
++	pwm->mmio_base = ioremap(res->start, resource_size(res));
++	if (pwm->mmio_base == NULL) {
++		err = -ENXIO;
++		goto fail_no_ioremap;
++	}
++
++	err = sysfs_create_group(&pdev->dev.kobj, &ep93xx_pwm_sysfs_files);
++	if (err)
++		goto fail_no_sysfs;
++
++	pwm->clk = clk_get(&pdev->dev, "pwm_clk");
++	if (IS_ERR(pwm->clk)) {
++		err = PTR_ERR(pwm->clk);
++		goto fail_no_clk;
++	}
++
++	pwm->duty_percent = 50;
++
++	platform_set_drvdata(pdev, pwm);
++
++	/* disable pwm at startup. Avoids zero value. */
++	ep93xx_pwm_disable(pwm);
++	ep93xx_pwm_write_tc(pwm, EP93XX_PWM_MAX_COUNT);
++	ep93xx_pwm_write_dc(pwm, EP93XX_PWM_MAX_COUNT / 2);
++
++	clk_enable(pwm->clk);
++
++	return 0;
++
++fail_no_clk:
++	sysfs_remove_group(&pdev->dev.kobj, &ep93xx_pwm_sysfs_files);
++fail_no_sysfs:
++	iounmap(pwm->mmio_base);
++fail_no_ioremap:
++	release_mem_region(res->start, resource_size(res));
++fail_no_mem_resource:
++	kfree(pwm);
++fail_no_mem:
++	ep93xx_pwm_release_gpio(pdev);
++	return err;
 +}
 +
-+static void __exit pwm_ep93xx_exit(void)
++static int __exit ep93xx_pwm_remove(struct platform_device *pdev)
 +{
-+	platform_driver_unregister(&ep93xx_pwm_platform_driver);
++	struct ep93xx_pwm *pwm = platform_get_drvdata(pdev);
++	struct resource *res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
++
++	ep93xx_pwm_disable(pwm);
++	clk_disable(pwm->clk);
++	clk_put(pwm->clk);
++	platform_set_drvdata(pdev, NULL);
++	sysfs_remove_group(&pdev->dev.kobj, &ep93xx_pwm_sysfs_files);
++	iounmap(pwm->mmio_base);
++	release_mem_region(res->start, resource_size(res));
++	kfree(pwm);
++	ep93xx_pwm_release_gpio(pdev);
++
++	return 0;
 +}
 +
-+module_init(pwm_ep93xx_init);
-+module_exit(pwm_ep93xx_exit);
++static struct platform_driver ep93xx_pwm_driver = {
++	.driver		= {
++		.name	= "ep93xx-pwm",
++		.owner	= THIS_MODULE,
++	},
++	.remove		= __exit_p(ep93xx_pwm_remove),
++};
 +
-+MODULE_AUTHOR("Matthieu Crapet <mcrapet@gmail.com>");
++static int __init ep93xx_pwm_init(void)
++{
++	return platform_driver_probe(&ep93xx_pwm_driver, ep93xx_pwm_probe);
++}
++
++static void __exit ep93xx_pwm_exit(void)
++{
++	platform_driver_unregister(&ep93xx_pwm_driver);
++}
++
++module_init(ep93xx_pwm_init);
++module_exit(ep93xx_pwm_exit);
++
++MODULE_AUTHOR("Matthieu Crapet <mcrapet@gmail.com>, "
++	      "H Hartley Sweeten <hsweeten@visionengravers.com>");
 +MODULE_DESCRIPTION("EP93xx PWM driver");
 +MODULE_LICENSE("GPL");
-+MODULE_VERSION("0.11");
++MODULE_ALIAS("platform:ep93xx-pwm");
 -- 
 1.6.3.3
 

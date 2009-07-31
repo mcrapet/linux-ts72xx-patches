@@ -1,4 +1,4 @@
-Release notes about "linux-2.6.29.1-ts7200_matt-5" patch
+Release notes about "linux-2.6.29.1-ts7200_matt-6" patch
 This is mainly created for EP9301 & EP9302 CPUs and more especially for TS-7200, TS-7250 & TS-7260
 SBCs manufactured by Technologic Systems (http://www.embeddedarm.com).
 
@@ -187,24 +187,24 @@ $ INSTALL_MOD_PATH=/your-path-to/nfsroot make modules_install
     // (hclk=59.0Mhz) I get 328mA on my TS-7200...
 
 
-  # PWM driver(module named ep93xx_pwm.ko). EP93XX has got two channels (range is 225Hz to 14745600Hz)
-    On TS-72xx machine I enable PWM1 which is available through header (DIO_6)
+  # PWM driver(module named ep93xx_pwm.ko). EP93XX has got two channels (range is 225Hz to 7372800Hz)
+    On TS-72xx machine I enable PWM0 and PWM1 which is available through header (DIO_6)
     Note: PWM1 is multiplexed with port B bit 6 GPIO (EGPIO[14])
 
-    $ echo 75 > /sys/devices/platform/ep93xx-pwm.1/duty
-    $ cat /sys/devices/platform/ep93xx-pwm.1/duty
-    75%
+    $ echo 75 > /sys/devices/platform/ep93xx-pwm.1/duty_percent
+    $ cat /sys/devices/platform/ep93xx-pwm.1/duty_percent
+    75
 
-    $ echo 555 > /sys/devices/platform/ep93xx-pwm.1/cycle 
-    $ cat /sys/devices/platform/ep93xx-pwm.1/cycle 
+    $ echo 555 > /sys/devices/platform/ep93xx-pwm.1/freq
+    $ cat /sys/devices/platform/ep93xx-pwm.1/freq
     555 Hz
 
-    $ echo 0 > /sys/devices/platform/ep93xx-pwm.1/cycle 
-    $ cat /sys/devices/platform/ep93xx-pwm.1/cycle 
+    $ echo 0 > /sys/devices/platform/ep93xx-pwm.1/freq
+    $ cat /sys/devices/platform/ep93xx-pwm.1/freq
     disabled
 
-    $ echo 1234567 > /sys/devices/platform/ep93xx-pwm.1/cycle
-    $ cat /sys/devices/platform/ep93xx-pwm.1/cycle
+    $ echo 1234567 > /sys/devices/platform/ep93xx-pwm.1/freq
+    $ cat /sys/devices/platform/ep93xx-pwm.1/freq
     1340509 Hz
 
 
@@ -267,6 +267,14 @@ $ INSTALL_MOD_PATH=/your-path-to/nfsroot make modules_install
 
 ChangeLog
 =========
+linux-2.6.29.1-ts7200_matt-6 (2009.aug.01)
+
+	* ts72xx_base: reverted "include/mach/uncompress.h"; 
+	  "include/mach/ts72xx.h": modified board_is_ts7xxx inline functions (thanks to Todd Valentic)
+	* ts72xx_sbcinfo: fixed test bug (thanks to Todd Valentic). Reindented according 'CodingStyle'.
+	* ep93xx_pwm: rebase according to official patch:
+	  http://www.arm.linux.org.uk/developer/patches/viewpatch.php?id=5628/1
+
 linux-2.6.29.1-ts7200_matt-5 (2009.jul.11)
 
 	+ added ts72xx_rs485 patch. Thanks to Daniel Smolik.
