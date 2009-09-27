@@ -1,4 +1,4 @@
-Release notes about "linux-2.6.29.1-ts7200_matt-6" patch
+Release notes about "linux-2.6.29.1-ts7200_matt-7" patch
 This is mainly created for EP9301 & EP9302 CPUs and more especially for TS-7200, TS-7250 & TS-7260
 SBCs manufactured by Technologic Systems (http://www.embeddedarm.com).
 
@@ -60,6 +60,7 @@ Please apply "tmp/double_check_mel.patch".
 
 TODO:
 * ts72xx_con: if no LCD is connected, modprobe is stuck (wait busy flag from LCD on GPIO port A)
+* cpufreq: values for EP9302 chips
 
 Available 'defconfig'
 ---------------------
@@ -267,6 +268,13 @@ $ INSTALL_MOD_PATH=/your-path-to/nfsroot make modules_install
 
 ChangeLog
 =========
+linux-2.6.29.1-ts7200_matt-7 (2009.sep.28)
+
+	* ts72xx_wdt: commented ioctl (WDIOC_SETTIMEOUT and WDIOC_GETTIMEOUT) API issue,
+          thanks to Todd Valentic. This driver needs to be reworked.
+	* updated tmp/yaffs.patch (not included in monolithic patch)
+	+ added tmp/ts72xx-fix_128mo.patch (thanks to Todd Valentic)
+
 linux-2.6.29.1-ts7200_matt-6 (2009.aug.01)
 
 	* ts72xx_base: reverted "include/mach/uncompress.h"; 

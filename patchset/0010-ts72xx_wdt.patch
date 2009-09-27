@@ -1,14 +1,15 @@
-From 92168060cf953c7ded721a708641b7f33b2ce269 Mon Sep 17 00:00:00 2001
+From c5dd2494e9707fe3e40810144c048bd17ef0dca6 Mon Sep 17 00:00:00 2001
 From: Matthieu Crapet <mcrapet@gmail.com>
 Date: Sun, 5 Apr 2009 14:17:47 +0200
 Subject: [PATCH 10/25] ts72xx_wdt
 
+Add comment for WDIOC_SETTIMEOUT and WDIOC_GETTIMEOUT ioctl API.
 ---
  arch/arm/mach-ep93xx/ts72xx.c |   24 +++
  drivers/watchdog/Kconfig      |   12 ++
  drivers/watchdog/Makefile     |    1 +
- drivers/watchdog/ts72xx_wdt.c |  332 +++++++++++++++++++++++++++++++++++++++++
- 4 files changed, 369 insertions(+), 0 deletions(-)
+ drivers/watchdog/ts72xx_wdt.c |  336 +++++++++++++++++++++++++++++++++++++++++
+ 4 files changed, 373 insertions(+), 0 deletions(-)
  create mode 100644 drivers/watchdog/ts72xx_wdt.c
 
 diff --git a/arch/arm/mach-ep93xx/ts72xx.c b/arch/arm/mach-ep93xx/ts72xx.c
@@ -90,10 +91,10 @@ index 806b3eb..12986c4 100644
  obj-$(CONFIG_DAVINCI_WATCHDOG) += davinci_wdt.o
 diff --git a/drivers/watchdog/ts72xx_wdt.c b/drivers/watchdog/ts72xx_wdt.c
 new file mode 100644
-index 0000000..7cbac78
+index 0000000..5f8ff82
 --- /dev/null
 +++ b/drivers/watchdog/ts72xx_wdt.c
-@@ -0,0 +1,332 @@
+@@ -0,0 +1,336 @@
 +/*
 + *	TS-72xx Watchdog Driver for Technologic Systems boards.
 + *
@@ -129,7 +130,7 @@ index 0000000..7cbac78
 +#include <asm/system.h>
 +#include <asm/mach-types.h>
 +
-+#define WATCHDOG_VERSION "0.2"
++#define WATCHDOG_VERSION "0.3"
 +#define PFX "ts72xx_wdt: "
 +
 +#define WATCHDOG_TIMEOUT 8000 /* 8 seconds */
@@ -218,6 +219,7 @@ index 0000000..7cbac78
 +				if (get_user(c, buf + i))
 +					return -EFAULT;
 +
++				/* Handle Magic Close feature */
 +				if (c == 'V')
 +					set_bit(WDT_OK_TO_CLOSE, &ts72xx_wdt_status);
 +				else
@@ -258,6 +260,9 @@ index 0000000..7cbac78
 +			ret = 0;
 +			break;
 +
++		/* Warning: The two following ioctls are violating API
++		 * (Documentation/watchdog/watchdog-api.txt) because argument
++		 * is considered here as milliseconds instead of seconds. */
 +		case WDIOC_SETTIMEOUT:
 +			if (get_user(new_margin, (int __user *)arg))
 +				return -EFAULT;
