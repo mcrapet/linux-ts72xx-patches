@@ -1,0 +1,20 @@
+#
+# UART3 does not exist on EP9301 and EP9302 (used on all TS-72XX SBCs).
+# Disabling clock seems to save 1mA.
+#
+diff --git a/arch/arm/mach-ep93xx/core.c b/arch/arm/mach-ep93xx/core.c
+index e048265..de163e3 100644
+--- a/arch/arm/mach-ep93xx/core.c
++++ b/arch/arm/mach-ep93xx/core.c
+@@ -652,7 +652,11 @@ void __init ep93xx_init_devices(void)
+ 
+ 	amba_device_register(&uart1_device, &iomem_resource);
+ 	amba_device_register(&uart2_device, &iomem_resource);
++#ifndef CONFIG_MACH_TS72XX
+ 	amba_device_register(&uart3_device, &iomem_resource);
++#else
++	ep93xx_devcfg_clear_bits(EP93XX_SYSCON_DEVCFG_U3EN);
++#endif
+ 
+   platform_device_register(&ep93xx_gpio_leds);
+ 	platform_device_register(&ep93xx_rtc_device);
