@@ -1,4 +1,4 @@
-Release notes about "linux-2.6.32.3-ts7200_matt-1" patch
+Release notes about "linux-2.6.32.3-ts7200_matt-2" patch
 This is mainly created for EP9301 & EP9302 CPUs and more especially for TS-7200, TS-7250 & TS-7260
 SBCs manufactured by Technologic Systems (http://www.embeddedarm.com).
 
@@ -27,8 +27,9 @@ Patches droppped from linux-2.6.32-rc3-ts7200_matt-1:
 - 0019-ts72xx_wdt.patch
 
 Pending mainline stuff:
-- use NAND platform driver (and drop NAND specific driver ts7250.c)
+- use NAND platform driver (and drop NAND specific driver ts7250.c). Already in linux-next.
 - register the pwm devices on the ts72xx dev boards
+- ts72xx (cpld) watchdog driver
 
 
 Short version
@@ -268,6 +269,16 @@ $ INSTALL_MOD_PATH=/your-path-to/nfsroot make modules_install
     1
     $ echo 2 >average             // two samples are acquired foa one request
 
+  # SD Card support (for TS-7260)
+  ts72xx-sdcard ts72xx-sdcard.0: SD card hardware revision: 00000000
+  ts72xx-sdcard ts72xx-sdcard.0: block device major number = 254
+  ts72xx-sdcard ts72xx-sdcard.0: New SD card detected, name=sda size=990976 (sectors)
+    sda: sda1
+
+  $ mknod /dev/tssda  254 0 b
+  $ mknod /dev/tssda1 254 1 b
+  $ mount -t ext2 /dev/tssda1 /media/sdcard
+
 
   PC/104 peripherals
   -----------------
@@ -284,6 +295,9 @@ $ INSTALL_MOD_PATH=/your-path-to/nfsroot make modules_install
 
 ChangeLog
 =========
+linux-2.6.32.3-ts7200_matt-2 (2010.mar.18)
+	* ts72xx_sdcard: base SD Card support for TS-7260
+
 linux-2.6.32.3-ts7200_matt-1 (2010.jan.17)
 
 	* Initial release
