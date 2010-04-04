@@ -1,7 +1,7 @@
-From 8785e9c88a598872b4313864d55d266bf5ce9a81 Mon Sep 17 00:00:00 2001
+From 7e67cd3729eaee791a8dfd5cd46c26689e4b2de2 Mon Sep 17 00:00:00 2001
 From: Matthieu Crapet <mcrapet@gmail.com>
 Date: Sun, 17 Jan 2010 19:50:34 +0100
-Subject: [PATCH 16/16] ts7200_nor_flash
+Subject: [PATCH 16/18] ts7200_nor_flash
 
 ---
  drivers/mtd/maps/Kconfig        |    8 +++
@@ -154,5 +154,5 @@ index 0000000..efc5f00
 +MODULE_AUTHOR("Matthieu Crapet <mcrapet@gmail.com>");
 +MODULE_DESCRIPTION("MTD map driver for TS-7200 board (" __MODULE_STRING(WINDOW_READABLE_SIZE) "MB flash version)");
 -- 
-1.6.5
+1.7.0
 

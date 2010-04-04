@@ -1,7 +1,7 @@
-From 3856cf5611c3ea1adbd26dca7fd4c4dd33962881 Mon Sep 17 00:00:00 2001
+From 517f2cf7ce5d9a674f8c7c61c06373d6e0aa245f Mon Sep 17 00:00:00 2001
 From: Matthieu Crapet <mcrapet@gmail.com>
 Date: Sun, 17 Jan 2010 19:10:30 +0100
-Subject: [PATCH 14/16] ep93xx_spi
+Subject: [PATCH 14/18] ep93xx_spi
 
 ---
  arch/arm/mach-ep93xx/clock.c            |    4 +
@@ -976,5 +976,5 @@ index 0000000..d3600f7
 +MODULE_LICENSE("GPL");
 +MODULE_VERSION("0.1");
 -- 
-1.6.5
+1.7.0
 

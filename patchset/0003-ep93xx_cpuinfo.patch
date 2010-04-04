@@ -1,7 +1,7 @@
 From e9b42211d80fd55bfdeb498620e524d2d2fee81d Mon Sep 17 00:00:00 2001
 From: Matthieu Crapet <mcrapet@gmail.com>
 Date: Sun, 17 Jan 2010 17:07:14 +0100
-Subject: [PATCH 03/16] ep93xx_cpuinfo
+Subject: [PATCH 03/18] ep93xx_cpuinfo
 
 ---
  arch/arm/kernel/setup.c |    9 +++++++++
@@ -28,5 +28,5 @@ index c6c57b6..29d5f4f 100644
  	seq_printf(m, "Serial\t\t: %08x%08x\n",
  		   system_serial_high, system_serial_low);
 -- 
-1.6.5
+1.7.0
 

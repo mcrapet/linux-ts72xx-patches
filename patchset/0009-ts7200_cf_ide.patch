@@ -1,7 +1,7 @@
-From 124e97287a6e836117c451455c7702575cd57c9b Mon Sep 17 00:00:00 2001
+From 201d5d054a0209642a1471ede5d08a3154d36d16 Mon Sep 17 00:00:00 2001
 From: Matthieu Crapet <mcrapet@gmail.com>
 Date: Sun, 17 Jan 2010 18:02:58 +0100
-Subject: [PATCH 09/16] ts7200_cf_ide
+Subject: [PATCH 09/18] ts7200_cf_ide
 
 ---
  drivers/ide/Kconfig         |    7 +++++
@@ -111,5 +111,5 @@ index 0000000..14c9765
 +MODULE_LICENSE("GPL");
 +MODULE_VERSION("0.2");
 -- 
-1.6.5
+1.7.0
 

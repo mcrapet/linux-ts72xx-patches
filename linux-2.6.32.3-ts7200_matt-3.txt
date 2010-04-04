@@ -1,4 +1,4 @@
-Release notes about "linux-2.6.32.3-ts7200_matt-2" patch
+Release notes about "linux-2.6.32.3-ts7200_matt-3" patch
 This is mainly created for EP9301 & EP9302 CPUs and more especially for TS-7200, TS-7250 & TS-7260
 SBCs manufactured by Technologic Systems (http://www.embeddedarm.com).
 
@@ -13,7 +13,7 @@ You can find their submitted patches here:
 ---
 
 2.6.32 adds some nice changes for ep93xx architecture:
-- DMA is there
+- DMA (m2p) is there
 - ep93xx PWM driver (many thanks to Hartley Sweeten)
 - ep93xx (red & green) leds support
 - physmap fix for TS-7200 NOR flash
@@ -96,7 +96,7 @@ Available 'defconfig'
 
 TODO
 ----
-* ts72xx_con: if no LCD is connected, modprobe is stuck (wait busy flag from LCD on GPIO port A)
+* ts72xx_con: if no LCD is connected, modprobe deadlocks (wait busy flag from LCD on GPIO port A)
 * cpufreq: values for EP9302 chips
 
 
@@ -251,6 +251,16 @@ $ INSTALL_MOD_PATH=/your-path-to/nfsroot make modules_install
     Option max197 A/D : yes
     Option RS-485     : no
     Jumpers           : JP2=y JP3=y JP4=n JP5=n JP6=n
+    CPLD Watchdog     : disabled
+    Power management  : no
+
+    $ cat /proc/driver/sbcinfo 
+    Model             : TS-7260 (CPU rev E2) (PLD rev E)
+    Option max197 A/D : no
+    Option RS-485     : no
+    Jumpers           : JP2=y JP3=y JP4=n JP5=n JP6=n
+    CPLD Watchdog     : disabled
+    Power management  : rs232=1 usb=1 lcd=1 pc104=1 ttl=0
 
   # MAX197 option. 8 (12-bit) ADC channels (module named ts72xx_max197)
     $ cd /sys/devices/platform/ts72xx-max197
@@ -295,7 +305,13 @@ $ INSTALL_MOD_PATH=/your-path-to/nfsroot make modules_install
 
 ChangeLog
 =========
+linux-2.6.32.3-ts7200_matt-3 (2010.apr.05)
+
+	* ts72xx_keypad: fixed, works again
+	* ep93xx: add m2m DMA support
+
 linux-2.6.32.3-ts7200_matt-2 (2010.mar.18)
+
 	* ts72xx_sdcard: base SD Card support for TS-7260
 
 linux-2.6.32.3-ts7200_matt-1 (2010.jan.17)

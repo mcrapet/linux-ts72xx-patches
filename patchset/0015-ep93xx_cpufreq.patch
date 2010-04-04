@@ -1,7 +1,7 @@
-From 74273404224772f408d8a1605bc4864f5aa84999 Mon Sep 17 00:00:00 2001
+From 334dab568dfd6a3e1bc12c8b64b7890513658eff Mon Sep 17 00:00:00 2001
 From: Matthieu Crapet <mcrapet@gmail.com>
 Date: Sun, 17 Jan 2010 19:46:15 +0100
-Subject: [PATCH 15/16] ep93xx_cpufreq
+Subject: [PATCH 15/18] ep93xx_cpufreq
 
 ---
  arch/arm/Kconfig               |   12 ++
@@ -351,5 +351,5 @@ index 0000000..9188e5c
 +MODULE_LICENSE("GPL");
 +MODULE_VERSION("1.01");
 -- 
-1.6.5
+1.7.0
 

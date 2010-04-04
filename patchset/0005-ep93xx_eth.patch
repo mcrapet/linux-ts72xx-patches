@@ -1,7 +1,7 @@
-From 96842e1f8fd5fdbee89ea0246ffd639f2b01f8f6 Mon Sep 17 00:00:00 2001
+From ca8d8ef139d4273d2ddb7ed34fdd5d31bc7ac894 Mon Sep 17 00:00:00 2001
 From: Matthieu Crapet <mcrapet@gmail.com>
 Date: Sun, 17 Jan 2010 17:45:23 +0100
-Subject: [PATCH 05/16] ep93xx_eth
+Subject: [PATCH 05/18] ep93xx_eth
 
 ---
  drivers/net/arm/Kconfig      |    1 +
@@ -531,5 +531,5 @@ index b25467a..923a21b 100644
  	ep93xx_eth_remove(pdev);
  	return err;
 -- 
-1.6.5
+1.7.0
 

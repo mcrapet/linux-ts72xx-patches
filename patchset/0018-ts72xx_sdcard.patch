@@ -1,7 +1,7 @@
-From ad214acaccaa27b7a5c2c54d169f87194b1d5595 Mon Sep 17 00:00:00 2001
+From 2e61d3c368c76dbcde320f38d21c17acee52e9e3 Mon Sep 17 00:00:00 2001
 From: Matthieu Crapet <mcrapet@gmail.com>
 Date: Thu, 18 Mar 2010 16:26:36 +0100
-Subject: [PATCH] ts72xx_sdcard
+Subject: [PATCH 18/18] ts72xx_sdcard
 
 SD Card support for TS-7260
 Patch based on work of Breton Saunders:
@@ -21,10 +21,10 @@ http://tech.groups.yahoo.com/group/ts-7000/message/16028
  create mode 100644 drivers/block/tssdcore.h
 
 diff --git a/arch/arm/mach-ep93xx/include/mach/ts72xx.h b/arch/arm/mach-ep93xx/include/mach/ts72xx.h
-index 006c5a2..f9e532a 100644
+index e78e657..d9d79e5 100644
 --- a/arch/arm/mach-ep93xx/include/mach/ts72xx.h
 +++ b/arch/arm/mach-ep93xx/include/mach/ts72xx.h
-@@ -145,6 +145,8 @@
+@@ -155,6 +155,8 @@
  #define TS7200_CF_AUX_PHYS_BASE  0x10400006
  #define TS7200_CF_DATA_PHYS_BASE 0x21000000
  

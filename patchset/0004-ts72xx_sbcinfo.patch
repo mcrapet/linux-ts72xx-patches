@@ -1,14 +1,15 @@
-From 45cb4cee22ba66084e8c9b8e5e78dbe200417a15 Mon Sep 17 00:00:00 2001
+From dc5bd573884f3831610c272ea7f6ea1b186bb659 Mon Sep 17 00:00:00 2001
 From: Matthieu Crapet <mcrapet@gmail.com>
 Date: Sun, 17 Jan 2010 17:11:19 +0100
-Subject: [PATCH 04/16] ts72xx_sbcinfo
+Subject: [PATCH 04/18] ts72xx_sbcinfo
 
 ---
- arch/arm/mach-ep93xx/Kconfig          |    7 ++
- arch/arm/mach-ep93xx/Makefile         |    1 +
- arch/arm/mach-ep93xx/ts72xx.c         |    5 +
- arch/arm/mach-ep93xx/ts72xx_sbcinfo.c |  156 +++++++++++++++++++++++++++++++++
- 4 files changed, 169 insertions(+), 0 deletions(-)
+ arch/arm/mach-ep93xx/Kconfig               |    7 +
+ arch/arm/mach-ep93xx/Makefile              |    1 +
+ arch/arm/mach-ep93xx/include/mach/ts72xx.h |   10 ++
+ arch/arm/mach-ep93xx/ts72xx.c              |    5 +
+ arch/arm/mach-ep93xx/ts72xx_sbcinfo.c      |  200 ++++++++++++++++++++++++++++
+ 5 files changed, 223 insertions(+), 0 deletions(-)
  create mode 100644 arch/arm/mach-ep93xx/ts72xx_sbcinfo.c
 
 diff --git a/arch/arm/mach-ep93xx/Kconfig b/arch/arm/mach-ep93xx/Kconfig
@@ -38,6 +39,27 @@ index eae6199..c2451e6 100644
  obj-$(CONFIG_MACH_MICRO9)	+= micro9.o
  obj-$(CONFIG_MACH_TS72XX)	+= ts72xx.o
 +obj-$(CONFIG_MACH_TS72XX_SBCINFO)	+= ts72xx_sbcinfo.o
+diff --git a/arch/arm/mach-ep93xx/include/mach/ts72xx.h b/arch/arm/mach-ep93xx/include/mach/ts72xx.h
+index 006c5a2..e78e657 100644
+--- a/arch/arm/mach-ep93xx/include/mach/ts72xx.h
++++ b/arch/arm/mach-ep93xx/include/mach/ts72xx.h
+@@ -117,6 +117,16 @@
+ #define TS72XX_RS485_MODE_57600_HD  0x06
+ #define TS72XX_RS485_MODE_115200_HD 0x07
+ 
++#define TS7260_POWER_MANAGEMENT_PHYS_BASE	0x12000000
++#define TS7260_POWER_MANAGEMENT_SIZE		0x00001000
++#define		TS7260_PM_RS232_LEVEL_CONVERTER	0x01
++#define		TS7260_PM_USB			0x02
++#define		TS7260_PM_LCD			0x04
++#define		TS7260_PM_5V_SWITCHER		0x08
++#define		TS7260_PM_PC104_CLOCK		0x10
++#define		TS7260_PM_PC104_FAST_STROBES	0x20
++#define		TS7260_PM_TTL_UART_ENABLE	0x40
++#define		TS7260_PM_SCRATCH_BIT		0x80
+ 
+ #define TS72XX_PC104_8BIT_IO_VIRT_BASE  0xfebf0000
+ #define TS72XX_PC104_8BIT_IO_PHYS_BASE  0x11e00000
 diff --git a/arch/arm/mach-ep93xx/ts72xx.c b/arch/arm/mach-ep93xx/ts72xx.c
 index 4a97ff7..2c0af20 100644
 --- a/arch/arm/mach-ep93xx/ts72xx.c
@@ -56,10 +78,10 @@ index 4a97ff7..2c0af20 100644
  		.length		= TS72XX_OPTIONS_SIZE,
 diff --git a/arch/arm/mach-ep93xx/ts72xx_sbcinfo.c b/arch/arm/mach-ep93xx/ts72xx_sbcinfo.c
 new file mode 100644
-index 0000000..4589d14
+index 0000000..8fc6a6f
 --- /dev/null
 +++ b/arch/arm/mach-ep93xx/ts72xx_sbcinfo.c
-@@ -0,0 +1,156 @@
+@@ -0,0 +1,200 @@
 +/*
 + *  Technologic Systems TS-72XX sbc /proc/driver/sbcinfo entry.
 + *
@@ -83,10 +105,13 @@ index 0000000..4589d14
 +
 +struct infos {
 +	const char *cpu_rev;
-+	int model, pld;
++	int model, pld, wdt;
 +	int option_ad;
 +	int option_rs485;
 +	unsigned char jumpers[6]; // 0=off,1=on,2=error
++
++	/* Power management : TS-7260 only */
++	int pm;
 +};
 +
 +static const char *revisions[] = { "A", "B", "C", "D0", "D1", "E0", "E1", "E2", "??" };
@@ -149,28 +174,69 @@ index 0000000..4589d14
 +		data->jumpers[3] = data->jumpers[4] = data->jumpers[5] = 2;
 +	}
 +
++	/* cpld watchdog */
++	p = ioremap(TS72XX_WATCHDOG_CONTROL_PHYS_BASE, TS72XX_WATCHDOG_CONTROL_SIZE);
++	if (p) {
++		data->wdt = __raw_readb(p) & 0x7;
++		iounmap(p);
++	} else {
++		data->wdt = 8;
++	}
++
++	/* power management */
++	data->pm = -1;
++	if (data->model == 7260) {
++		p = ioremap(TS7260_POWER_MANAGEMENT_PHYS_BASE, TS7260_POWER_MANAGEMENT_SIZE);
++		if (p) {
++			data->pm = __raw_readb(p);
++			iounmap(p);
++		}
++	}
 +}
 +
++static char *get_pm_string(int reg, char *buffer, size_t size)
++{
++	static const char *pm_state = "rs232=%d usb=%d lcd=%d pc104=%d ttl=%d";
++
++	if (reg < 0) {
++		strncpy(buffer, "n/a", size);
++	} else {
++		/* 1 means on/enabled */
++		snprintf(buffer, size, pm_state,
++				reg & TS7260_PM_RS232_LEVEL_CONVERTER,
++				!!(reg & TS7260_PM_USB),
++				!!(reg & TS7260_PM_LCD),
++				!(reg & TS7260_PM_PC104_CLOCK),
++				!!(reg & TS7260_PM_TTL_UART_ENABLE));
++	}
++	return buffer;
++}
 +
 +static int ts72xx_sbcinfo_read_proc(char *buffer, char **start, off_t offset,
 +		int count, int *eof, void *data)
 +{
 +	int len, size = count;
 +	char *p = buffer;
++	char temp[64];
 +	struct infos nfo;
-+	const char jpc[3] = { 'n', 'y', '?' };
++
++	static const char jpc[3] = { 'n', 'y', '?' };
++	static const char *wdt[9] = { "disabled", "250ms", "500ms", "1s", "reserved", "2s", "4s", "8s", "n/a" };
 +
 +	get_sbcinfo(&nfo);
 +	len = scnprintf(p, size,
 +			"Model             : TS-%d (CPU rev %s) (PLD rev %c)\n"
 +			"Option max197 A/D : %s\n"
 +			"Option RS-485     : %s\n"
-+			"Jumpers           : JP2=%c JP3=%c JP4=%c JP5=%c JP6=%c\n",
++			"Jumpers           : JP2=%c JP3=%c JP4=%c JP5=%c JP6=%c\n"
++			"CPLD Watchdog     : %s\n"
++			"Power management  : %s\n",
 +			nfo.model, nfo.cpu_rev, nfo.pld + 0x40,
 +			(nfo.option_ad ? "yes" : "no"),
 +			(nfo.option_rs485 ? "yes" : "no"),
 +			jpc[nfo.jumpers[1]], jpc[nfo.jumpers[2]], jpc[nfo.jumpers[3]], jpc[nfo.jumpers[4]],
-+			jpc[nfo.jumpers[5]]);
++			jpc[nfo.jumpers[5]], wdt[nfo.wdt],
++			get_pm_string(nfo.pm, &temp[0], 64));
 +
 +	if (len <= offset + count)
 +		*eof = 1;
@@ -215,7 +281,7 @@ index 0000000..4589d14
 +MODULE_AUTHOR("Matthieu Crapet <mcrapet@gmail.com>");
 +MODULE_DESCRIPTION("Show information of Technologic Systems TS-72XX sbc");
 +MODULE_LICENSE("GPL");
-+MODULE_VERSION("1.02");
++MODULE_VERSION("1.03");
 -- 
-1.6.5
+1.7.0
 
