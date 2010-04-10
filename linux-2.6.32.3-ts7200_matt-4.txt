@@ -1,4 +1,4 @@
-Release notes about "linux-2.6.32.3-ts7200_matt-3" patch
+Release notes about "linux-2.6.32.3-ts7200_matt-4" patch
 This is mainly created for EP9301 & EP9302 CPUs and more especially for TS-7200, TS-7250 & TS-7260
 SBCs manufactured by Technologic Systems (http://www.embeddedarm.com).
 
@@ -27,7 +27,7 @@ Patches droppped from linux-2.6.32-rc3-ts7200_matt-1:
 - 0019-ts72xx_wdt.patch
 
 Pending mainline stuff:
-- use NAND platform driver (and drop NAND specific driver ts7250.c). Already in linux-next.
+- use NAND platform driver (and drop NAND specific driver ts7250.c). Already in linux-next (should be included in 2.6.34)
 - register the pwm devices on the ts72xx dev boards
 - ts72xx (cpld) watchdog driver
 
@@ -280,14 +280,20 @@ $ INSTALL_MOD_PATH=/your-path-to/nfsroot make modules_install
     $ echo 2 >average             // two samples are acquired foa one request
 
   # SD Card support (for TS-7260)
-  ts72xx-sdcard ts72xx-sdcard.0: SD card hardware revision: 00000000
-  ts72xx-sdcard ts72xx-sdcard.0: block device major number = 254
-  ts72xx-sdcard ts72xx-sdcard.0: New SD card detected, name=sda size=990976 (sectors)
-    sda: sda1
+    ts72xx-sdcard ts72xx-sdcard.0: SD card hardware revision: 00000000
+    ts72xx-sdcard ts72xx-sdcard.0: block device major number = 254
+    ts72xx-sdcard ts72xx-sdcard.0: New SD card detected, name=sda size=990976 (sectors)
+      tssda: tssda1
 
-  $ mknod /dev/tssda  254 0 b
-  $ mknod /dev/tssda1 254 1 b
-  $ mount -t ext2 /dev/tssda1 /media/sdcard
+    $ mknod /dev/tssda  254 0 b
+    $ mknod /dev/tssda1 254 1 b
+    $ mount -t ext2 /dev/tssda1 /media/sdcard
+
+    $ cat /proc/partitions 
+      major minor  #blocks  name
+      
+       254        0     495488 tssda
+       254        1     495400 tssda1
 
 
   PC/104 peripherals
@@ -305,6 +311,11 @@ $ INSTALL_MOD_PATH=/your-path-to/nfsroot make modules_install
 
 ChangeLog
 =========
+linux-2.6.32.3-ts7200_matt-4 (2010.apr.11)
+
+	* ts72xx_sdcard: modified devine name to "tssd" (instead od "sd", because it conflicts will usb keys)
+	  Thanks to Brian Smucker.
+
 linux-2.6.32.3-ts7200_matt-3 (2010.apr.05)
 
 	* ts72xx_keypad: fixed, works again
@@ -323,4 +334,3 @@ linux-2.6.32.3-ts7200_matt-1 (2010.jan.17)
 	* ts72xx_i2c: pins definition now in ts72xx.c
 	* ep93xx_spi: added missing gpio_request (for TMP124 chip select)
 	* ep93xx_eth: fixed
-

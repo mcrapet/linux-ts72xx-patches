@@ -5131,7 +5131,7 @@ index 0000000..edaee2a
 +#endif
 diff --git a/drivers/block/tssdcard.c b/drivers/block/tssdcard.c
 new file mode 100644
-index 0000000..eefa14e
+index 0000000..0624436
 --- /dev/null
 +++ b/drivers/block/tssdcard.c
 @@ -0,0 +1,414 @@
@@ -5164,18 +5164,18 @@ index 0000000..eefa14e
 +
 +#include "tssdcore.h"
 +
-+#define SDCARD_DEV_NAME          "sd"  /* will appear in /proc/partitions */
-+#define SD_SHIFT                 4     /* max 16 partitions = 1 << 4 */
++#define SDCARD_DEV_NAME          "tssd" /* will appear in /proc/partitions & /sys/class/block */
++#define SD_SHIFT                 4      /* max 16 partitions = 1 << 4 */
 +
-+#define KERN_SECTOR_SIZE         512   /* in bytes */
-+#define HARD_SECTOR_SIZE         512   /* in bytes */
-+#define HARD_2_KERN_SECTOR_RATIO 1     /* 1 kernel sector = 1 hardware sector */
++#define KERN_SECTOR_SIZE         512    /* in bytes */
++#define HARD_SECTOR_SIZE         512    /* in bytes */
++#define HARD_2_KERN_SECTOR_RATIO 1      /* 1 kernel sector = 1 hardware sector */
 +
 +
 +struct ts72xx_sdcard_device {
-+	struct sdcore tssdcore;        /* Physical core layer */
++	struct sdcore tssdcore;         /* Physical core layer */
 +	void __iomem *mmio_base;
-+	long size;                     /* Device size in (hardware) sectors */
++	long size;                      /* Device size in (hardware) sectors */
 +	int id;
 +	int media_change;
 +	int users;
@@ -5548,7 +5548,7 @@ index 0000000..eefa14e
 +MODULE_DESCRIPTION("TS72xx SD Card block driver");
 +MODULE_LICENSE("GPL");
 +MODULE_ALIAS_BLOCKDEV_MAJOR(SCSI_DISK0_MAJOR);
-+MODULE_ALIAS("sd");
++MODULE_ALIAS("tssd");
 diff --git a/drivers/block/tssdcore.h b/drivers/block/tssdcore.h
 new file mode 100644
 index 0000000..38d5b96
