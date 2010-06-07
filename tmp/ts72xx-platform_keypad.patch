@@ -1,0 +1,126 @@
+[ARM] ts72xx: Add support for a 4x4 matrix keypad on the DIO port
+
+The ts72xx boards are based on the ep9301/02 processors.  These versions
+of the ep93xx do not support the built in keyboard interface peripheral.
+But, they do have an external DIO port that a 4x4 matrix keypad can be
+connected to.
+
+This adds the necessary platform support to use the keypad with the
+matrix-keypad driver.
+
+Signed-off-by: H Hartley Sweeten <hsweeten@visionengravers.com>
+Tested-by: Dominic Storey <dstorey@barossafarm.com>
+Cc: Matthieu Crapet <mcrapet@gmail.com>
+
+---
+
+diff --git a/arch/arm/mach-ep93xx/ts72xx.c b/arch/arm/mach-ep93xx/ts72xx.c
+index a6407ae..767e114 100644
+--- a/arch/arm/mach-ep93xx/ts72xx.c
++++ b/arch/arm/mach-ep93xx/ts72xx.c
+@@ -20,6 +20,7 @@
+ #include <linux/i2c.h>
+ #include <linux/i2c-gpio.h>
+ #include <linux/spi/spi.h>
++#include <linux/input/matrix_keypad.h>
+ 
+ #include <mach/hardware.h>
+ #include <mach/ts72xx.h>
+@@ -286,6 +287,88 @@ static void __init ts72xx_register_sdcard(void)
+ 		platform_device_register(&ts72xx_sdcard);
+ }
+ 
++#if defined(CONFIG_KEYBOARD_MATRIX) || defined(CONFIG_KEYBOARD_MATRIX_MODULE)
++/*************************************************************************
++ * 4x4 matrix keypad connected to the DIO Port
++ *************************************************************************/
++static const uint32_t ts72xx_kbd_keymap[] = {
++	KEY(0, 0, KEY_1),
++	KEY(0, 1, KEY_2),
++	KEY(0, 2, KEY_3),
++	KEY(0, 3, KEY_UP),
++
++	KEY(1, 0, KEY_4),
++	KEY(1, 1, KEY_5),
++	KEY(1, 2, KEY_6),
++	KEY(1, 3, KEY_DOWN),
++
++	KEY(2, 0, KEY_7),
++	KEY(2, 1, KEY_8),
++	KEY(2, 2, KEY_9),
++	KEY(2, 3, KEY_LEFTCTRL),
++
++	KEY(3, 0, KEY_CLEAR),
++	KEY(3, 1, KEY_0),
++	KEY(3, 2, KEY_HELP),
++	KEY(3, 3, KEY_ENTER),
++};
++
++static struct matrix_keymap_data ts72xx_kbd_keymap_data = {
++	.keymap		= ts72xx_kbd_keymap,
++	.keymap_size	= ARRAY_SIZE(ts72xx_kbd_keymap),
++};
++
++static const int ts72xx_kbd_row_gpios[] = {
++	EP93XX_GPIO_LINE_EGPIO8,
++	EP93XX_GPIO_LINE_EGPIO9,
++	EP93XX_GPIO_LINE_EGPIO10,
++	EP93XX_GPIO_LINE_EGPIO11,
++};
++
++static const int ts72xx_kbd_col_gpios[] = {
++	EP93XX_GPIO_LINE_EGPIO12,
++	EP93XX_GPIO_LINE_EGPIO13,
++	EP93XX_GPIO_LINE_EGPIO14,
++	EP93XX_GPIO_LINE_EGPIO15,
++};
++
++static struct matrix_keypad_platform_data ts72xx_kbd_pdata = {
++	.keymap_data		= &ts72xx_kbd_keymap_data,
++	.row_gpios		= ts72xx_kbd_row_gpios,
++	.col_gpios		= ts72xx_kbd_col_gpios,
++	.num_row_gpios		= ARRAY_SIZE(ts72xx_kbd_row_gpios),
++	.num_col_gpios		= ARRAY_SIZE(ts72xx_kbd_col_gpios),
++	.col_scan_delay_us	= 20,
++	.debounce_ms		= 20,
++	.wakeup			= 1,
++	.active_low		= 1,
++	//.no_autorep		= 1,
++};
++
++static struct platform_device ts72xx_kbd_device = {
++	.name		= "matrix-keypad",
++	.id		= -1,
++	.dev		= {
++		.platform_data = &ts72xx_kbd_pdata,
++	},
++};
++
++static __init void ts72xx_register_keypad(void)
++{
++	int i;
++
++	for (i = 0; i < ARRAY_SIZE(ts72xx_kbd_row_gpios); i++) {
++		int irq = gpio_to_irq(ts72xx_kbd_row_gpios[i]);
++
++		ep93xx_gpio_int_debounce(irq, 1);
++	}
++
++	platform_device_register(&ts72xx_kbd_device);
++}
++#else
++static __init void ts72xx_register_keypad(void) {}
++#endif
++
+ 
+ static void __init ts72xx_init_machine(void)
+ {
+@@ -304,6 +387,8 @@ static void __init ts72xx_init_machine(void)
+ 			ARRAY_SIZE(ts72xx_spi_bus));
+ 	#endif
+ 
++	ts72xx_register_keypad();
++
+ 	/* PWM1 is DIO_6 on TS-72xx header */
+ 	ep93xx_register_pwm(0, 1);
+ }
