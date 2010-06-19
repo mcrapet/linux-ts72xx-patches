@@ -1,0 +1,15 @@
+Allow TS-72XX SBCs to use fully 128MB of RAM
+Courtesy of Todd Valentic
+
+diff -Naur linux-2.6.29.6.org/arch/arm/include/asm/setup.h linux-2.6.29.6.valentic/arch/arm/include/asm/setup.h
+--- linux-2.6.29.6.org/arch/arm/include/asm/setup.h	2009-07-02 16:41:20.000000000 -0700
++++ linux-2.6.29.6.valentic/arch/arm/include/asm/setup.h	2009-07-22 17:32:07.000000000 -0700
+@@ -192,7 +192,7 @@
+ /*
+  * Memory map description
+  */
+-#ifdef CONFIG_ARCH_LH7A40X
++#if defined (CONFIG_ARCH_LH7A40X) || defined (CONFIG_ARCH_EP93XX)
+ # define NR_BANKS 16
+ #else
+ # define NR_BANKS 8

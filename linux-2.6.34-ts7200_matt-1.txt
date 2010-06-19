@@ -1,0 +1,329 @@
+Release notes about "linux-2.6.34-ts7200_matt-1" patch
+This is mainly created for EP9301 & EP9302 CPUs and more especially for TS-7200, TS-7250 & TS-7260
+SBCs manufactured by Technologic Systems (http://www.embeddedarm.com).
+
+linux-arm-kernel mailing list is a good place to find new material.
+
+Lots of people are doing great work for ep93xx architecture.
+You can find their submitted patches here:
+[Hartley Sweeten]   http://www.arm.linux.org.uk/developer/patches/search.php?uid=1443
+[Ryan Mallon]       http://www.arm.linux.org.uk/developer/patches/search.php?uid=1556
+[Lennert Buytenhek] http://www.arm.linux.org.uk/developer/patches/search.php?uid=535
+
+News
+====
+
+2.6.34 adds:
+- ts72xx (cpld) watchdog driver (written by Mika Westerberg) [CONFIG_TS72XX_WATCHDOG]
+- some fixes/cosmetics in mach-ep93xx/{clock.c,core.c,gpio.c}.
+
+2.6.33 adds:
+- EXT4 driver can also mount EXT2 and EXT3 partitions [CONFIG_EXT4_USE_FOR_EXT23]
+
+Patches droppped from linux-2.6.32.3-ts7200_matt-5:
+- 0009-ts7200_cf_ide.patch (legacy IDE layer is deprecated, use PATA)
+- 0011-ep93xx_pm.patch (it was just a basic attempt, should be reworked)
+- 0014-ep93xx_spi.patch (a new driver is pending in mainline, wait a little)
+- 0015-ep93xx_cpufreq.patch (only worked for ep9301, badd because it doesn't use clk stuff)
+
+Incoming mainline stuff:
+- use NAND platform driver (and drop NAND specific driver ts7250.c). is included in 2.6.35-rc1)
+- register the pwm devices on the ts72xx dev boards (pending, no news)
+
+Troubleshootings
+----------------
+- For potential memory problems (we use sparse memory model), try adding some params to the kernel command:
+mem=8M@0x0 mem=8M@16M mem=8M@64M mem=8M@80M
+
+Available 'defconfig'
+---------------------
+zImage is ~1.8mo (~1.9mo for TS-7200). 
+NFS client is included (I like nfsroot mount); drop it to save ~220kb.
+
+* ts7200_eabi_small: Basic config for TS-7200 sbc.
+  Built-in: rtc (ep93xx-rtc & rtc-m48t86), eth, ext4fs, nfs, mtd (nor), pata (compact flash)
+  Modules : leds, pwm, max197, input keypad, TS-SER1, TS-ETH100, I2C, GPIO, TS-9600
+            watchdog (ep93xx_wdt & ts72xx_wdt), iptables, usb (+ hid + scsi related)
+  No support for : spi
+
+* ts7250_eabi_small: Basic config for TS-7250 sbc.
+  Built-in: rtc (ep93xx-rtc & rtc-m48t86), eth, ext4fs, nfs, mtd (nand)
+  Modules : leds, pwm, max197, input keypad, TS-SER1, TS-ETH100, I2C, GPIO, tssdcard,
+            watchdog (ep93xx_wdt & ts72xx_wdt), iptables, usb (+ hid + scsi related), jffs2, ubifs
+  No support for : pata, spi
+
+* ts7260_eabi_small: Basic config for TS-7260 sbc.
+  The same as "ts7250_eabi_small" but tssdcard is built-in.
+
+* ts72xx_eabi_small: Common basic config for all TS-72XX sbc.
+  Built-in: rtc (ep93xx-rtc & rtc-m48t86), eth, ext4fs, nfs
+  Modules : leds, pwm, max197, input keypad, TS-SER1, TS-ETH100, I2C, GPIO, tssdcard,
+            watchdog (ep93xx_wdt & ts72xx_wdt), iptables, usb (+ hid + scsi related)
+  No support for : pata, spi, mtd
+
+
+Short version
+=============
+
+  EP93xx processor
+  ----------------
+  - Ethernet
+  - RTC (no backed up RAM)
+  - I2C (based on gpio)
+  - USB 2.0
+  - Leds (red and green)
+  - PWM
+  - /proc/cpuinfo : ep93xx cpu revision & uniq ID
+  - Watchdog (bugged on early version of ep9302)
+
+  TS-72xx SBCs
+  ------------
+  - Watchdog (CPLD of TS-7200)
+  - PATA support: TS-7200 CF
+  - Max197 option (platform driver)
+  - NOR and NAND flash support
+  - /proc/driver/sbcinfo : some infos about TS-72XX sbc
+  - Input matrix keypad driver (DIO header)
+
+  PC/104 peripherals
+  -----------------
+  - TS-SER1 support [/dev/ttyS0]
+  - TS-9600: PATA support
+  - TS-5620 (RTC daughterboard for TS-7200) support
+  - TS-ETH100 support
+
+
+Long version
+============
+
+To compile (once patch is applied):
+$ cp /../ts72xx_eabi_full_defconfig /../linux-2.6.34/arch/arm/configs/
+$ make ts72xx_eabi_full_defconfig
+$ export ARCH=arm
+# fix path of your toolchain
+$ export CROSS_COMPILE=/.../arm-2008q3/bin/arm-none-linux-gnueabi-
+$ make menuconfig
+$ make
+$ INSTALL_MOD_PATH=/your-path-to/nfsroot make modules_install
+
+
+  EP93xx processor
+  ----------------
+  
+  # EP93XX GPIO. As "CONFIG_GPIOLIB" is supported, we can enable "CONFIG_GPIO_SYSFS" to have sysfs entries
+    Example with TS-72xx DIO 2x8 header:
+
+    $ echo 8  >/sys/class/gpio/export    // DIO_0 = Port B, bit 0
+    $ echo 9  >/sys/class/gpio/export    // DIO_1 = Port B, bit 1
+    $ echo 10 >/sys/class/gpio/export    // DIO_2 = Port B, bit 2
+    $ echo 11 >/sys/class/gpio/export    // DIO_3 = Port B, bit 3
+    $ echo 12 >/sys/class/gpio/export    // DIO_4 = Port B, bit 4
+    $ echo 13 >/sys/class/gpio/export    // DIO_5 = Port B, bit 5
+    $ echo 14 >/sys/class/gpio/export    // DIO_6 = Port B, bit 6 (can be already reserved for I2C SDA pin)
+    $ echo 15 >/sys/class/gpio/export    // DIO_7 = Port B, bit 7 (can be already reserved for I2C SCL pin)
+    $ echo 17 >/sys/class/gpio/export    // DIO_8 = Port F, bit 1
+
+    A new file "gpio8" will appear:
+
+    $ echo out >/sys/class/gpio/gpio8/direction 
+    $ echo 1 >/sys/class/gpio/gpio8/value
+    $ echo 0 >/sys/class/gpio/gpio8/value
+
+  # Leds.
+    Example1:                                    Example2:
+    $ cd /sys/class/leds/ep93xx:red              $ cd /sys/class/leds/ep93xx:green
+    $ echo timer >trigger                        $ echo none >trigger
+    $ echo 1000 >delay_on                        $ echo 100 >brightness
+    $ echo 500 >delay_off
+
+  # /proc/cpuinfo  has been slightly patched to add ep93xx features. Thanks to Petr Stetiar.
+
+    $ cat /proc/cpuinfo
+    Processor       : ARM920T rev 0 (v4l)
+    BogoMIPS        : 82.73
+    Features        : swp half thumb 
+    CPU implementer : 0x41
+    CPU architecture: 4T
+    CPU variant     : 0x1
+    CPU part        : 0x920
+    CPU revision    : 0
+    Cache type      : write-back
+    Cache clean     : cp15 c7 ops
+    Cache lockdown  : format A
+    Cache format    : Harvard
+    I size          : 16384
+    I assoc         : 64
+    I line length   : 32
+    I sets          : 8
+    D size          : 16384
+    D assoc         : 64
+    D line length   : 32
+    D sets          : 8
+    
+    Hardware        : Technologic Systems TS-72xx SBC
+    Revision        : 0004
+    Serial          : 0000000092011e06
+
+  # I2C pins (default ep93xx) are set to:
+    SCL pin: EP93XX_GPIO_LINE_EECLK (port G, bit 0)
+    SDA pin: EP93XX_GPIO_LINE_EEDAT (port G, bit 1)
+    But for TS-72xx machines, it is defined as:
+    SCL pin: EP93XX_GPIO_LINE_EGPIO15 (DIO_7: TS-72xx DIO 2x8 header)
+    SDA pin: EP93XX_GPIO_LINE_EGPIO14 (DIO_6: TS-72xx DIO 2x8 header)
+
+  # PWM driver(module named ep93xx_pwm.ko). EP93XX has got two channels (range is 225Hz to 7372800Hz)
+    On TS-72xx machine I only enable PWM1 which is available through header (DIO_6)
+    Note: PWM1 is multiplexed with port B bit 6 GPIO (EGPIO[14])
+
+    $ echo 75 > /sys/devices/platform/ep93xx-pwm.1/duty_percent
+    $ cat /sys/devices/platform/ep93xx-pwm.1/duty_percent
+    75
+
+    $ echo 555 > /sys/devices/platform/ep93xx-pwm.1/freq
+    $ cat /sys/devices/platform/ep93xx-pwm.1/freq
+    555 Hz
+
+    $ echo 0 > /sys/devices/platform/ep93xx-pwm.1/freq
+    $ cat /sys/devices/platform/ep93xx-pwm.1/freq
+    disabled
+
+    $ echo 1234567 > /sys/devices/platform/ep93xx-pwm.1/freq
+    $ cat /sys/devices/platform/ep93xx-pwm.1/freq
+    1340509 Hz
+
+  TS-72xx SBCs
+  ------------
+
+  # Compact flash (available on TS-7200 only) : PATA support
+    # insmod pata_ts7200_cf.ko 
+    scsi0 : pata_ts72xx
+    ata1: PATA max PIO4 mmio cmd 0x11000000 ctl 0x10400006 irq 32
+    ata1.00: ATA-0: CF CARD 2GB, 20071116, max MWDMA2
+    ata1.00: 3964464 sectors, multi 0: LBA 
+    ata1.00: configured for PIO
+    ata1.00: configured for PIO
+    ata1: EH complete
+    scsi 0:0:0:0: Direct-Access     ATA      CF CARD 2GB      2007 PQ: 0 ANSI: 5
+
+    Note: Don't forget "SCSI Disk support" (sd_mod.ko) dependency.
+
+  # NAND flash support (for TS-7250 & TS-7260)
+    Get some info:
+
+    $ /proc/mtd
+    dev:    size   erasesize  name
+    mtd0: 00004000 00004000 "TS-BOOTROM"
+    mtd1: 01d00000 00004000 "Linux"
+    mtd2: 002fc000 00004000 "RedBoot"
+
+    $ cat /proc/partitions 
+    major minor  #blocks  name
+    
+      31        0         16 mtdblock0
+      31        1      29696 mtdblock1
+      31        2       3056 mtdblock2
+
+  # Flash mapping driver for 8/16mo NOR strata-flash. 
+    This is the partition layout for 8mb NOR Flash:
+    [0x60000000 - 0x60020000[ size=0x20000  (131072 = 1 block)    : TS-BOOTROM (read-only)
+    [0x60020000 - 0x60620000[ size=0x600000 (6291456 = 48 blocks) : RootFS
+    [0x60620000 - 0x60800000| size=0x1E0000 (1966080 = 15 blocks) : Redboot
+
+  # /proc/driver/sbcinfo entry (module named ts72xx_sbcinfo.ko). Original idea by Liberty Young (Technologic Systems).
+    Print some information about the board.
+
+    $ cat /proc/driver/sbcinfo 
+    Model             : TS-7200 (CPU rev D1) (PLD rev C)
+    Option max197 A/D : yes
+    Option RS-485     : no
+    Jumpers           : JP2=y JP3=y JP4=n JP5=n JP6=n
+    CPLD Watchdog     : disabled
+    Power management  : n/a
+
+    $ cat /proc/driver/sbcinfo 
+    Model             : TS-7260 (CPU rev E2) (PLD rev E)
+    Option max197 A/D : no
+    Option RS-485     : no
+    Jumpers           : JP2=y JP3=y JP4=n JP5=n JP6=n
+    CPLD Watchdog     : disabled
+    Power management  : rs232=1 usb=1 lcd=1 pc104=1 ttl=0
+
+  # MAX197 option. 8 (12-bit) ADC channels (module named ts72xx_max197)
+    $ cd /sys/devices/platform/ts72xx-max197
+    $ cat ch1
+    0.000
+
+    For configuring range input:
+    $ echo 5  >ch2                // range 0..5V (this is the default)
+    $ echo 10 >ch3                // range 0..10V
+    $ echo -5 >ch4                // range -5..5V
+    $ echo -10 >ch5               // range -10..10V
+
+    If average option is compiled:
+    $ cd /sys/module/ts72xx_max197/parameters
+    $ cat average 
+    1
+    $ echo 2 >average             // two samples are acquired for one request
+
+  # SD Card support (for TS-7260). Module name is "ts72xx_sdcard.ko", it's a standalone block device driver.
+
+    # modprobe ts72xx_sdcard
+    ts72xx-sdcard ts72xx-sdcard.0: SD card hardware revision: 00000000
+    ts72xx-sdcard ts72xx-sdcard.0: block device major number = 254
+    ts72xx-sdcard ts72xx-sdcard.0: New SD card detected, name=sda size=990976 (sectors)
+      tssda: tssda1
+
+    $ mknod /dev/tssda  254 0 b
+    $ mknod /dev/tssda1 254 1 b
+    $ mount -t ext2 /dev/tssda1 /media/sdcard
+
+    $ cat /proc/partitions 
+      major minor  #blocks  name
+      
+       254        0     495488 tssda
+       254        1     495400 tssda1
+
+  PC/104 peripherals
+  -----------------
+
+  # TS-SER1. COM number is autodetected by driver (by writing to scratch register of uart 16550A)
+
+    Loading example (modules are located in the current directory):
+    # insmod 8250.ko 
+    Serial: 8250/16550 driver, 4 ports, IRQ sharing disabled
+    # insmod 8250_ts_ser1.ko 
+    serial8250.4: ttyS0 at I/O 0xc60442e8 (irq = 83) is a 16550A
+
+    Note: You can also force (at your own risk) an irq.
+          # insmod 8250_ts_ser1.ko ts_ser1_irq=7
+          serial8250.4: ttyS3 at I/O 0xc60802e8 (irq = 40) is a 16550A
+
+  # TS-ETH100. The main ethernet driver is ax88796 (introduced in Kernel 2.6.23).
+    This is only a platform device driver. Except that the main driver has to be modified :
+    NE2000 registers are 8-bit access, except for DATAPORT which is 16-bit access.
+    
+    Note: Don't forget to load ax88796.ko (if compiled as module)
+
+    Note: I have experienced this behavior sometimes:
+    # insmod ax88796_ts_eth100.ko 
+    ax88796 ax88796.0: 16bit, irq 33, c605e200, MAC: ff:ff:ff:ff:ff:ff
+    # rmmod ax88796_ts_eth100.ko 
+    # insmod ax88796_ts_eth100.ko 
+    ax88796 ax88796.0: 16bit, irq 33, c606e200, MAC: 94:6a:94:6a:94:6a
+
+
+ChangeLog
+=========
+linux-2.6.34-ts7200_matt-1 (2010.jun.20)
+
+	* ts72xx_base: some cleanup in ts72xx.h (added TS-7260 defines, ...)
+	* ep93xx_eth: rebase (indent, get rid of print_mac)
+	* ep93xx m2m DMA: little cleanup 
+	  (still need some major rework in the model of m2p driver)
+	* ts72xx_ts_ser1: some cleanup
+	* ts72xx_ts_eth100: some cleanup
+	* ts72xx_pata (pata_ts7200_cf & pata_ts9600) : add missing .release function
+	* ts72xx_dio_keypad: now uses "matrix-keypad" driver
+	* ts7200_nor_flash: more generic
+	* ts72xx_sdcard: renamed tssdcard.h to sdcore2.h for coherency
+	* ts72xx_nand_flash: use generic platform nand driver (Hartley Sweeten)
