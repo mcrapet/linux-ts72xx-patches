@@ -1,7 +1,7 @@
 From 93aa4fc5d32534422e80bbb7d1929f533c4ce65f Mon Sep 17 00:00:00 2001
 From: Matthieu Crapet <mcrapet@gmail.com>
 Date: Sat, 19 Jun 2010 15:49:34 +0200
-Subject: [PATCH 13/16] ts72xx_max197
+Subject: [PATCH 13/18] ts72xx_max197
 
 ---
  arch/arm/mach-ep93xx/ts72xx.c |   30 +++++

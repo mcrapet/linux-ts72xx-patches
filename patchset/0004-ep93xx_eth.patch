@@ -1,7 +1,7 @@
 From 9f020e91022926d1fe36b8a6e28b16bcca2d37e5 Mon Sep 17 00:00:00 2001
 From: Matthieu Crapet <mcrapet@gmail.com>
 Date: Thu, 10 Jun 2010 13:34:14 +0200
-Subject: [PATCH 04/16] ep93xx_eth
+Subject: [PATCH 04/18] ep93xx_eth
 
 ---
  drivers/net/arm/Kconfig      |    1 +

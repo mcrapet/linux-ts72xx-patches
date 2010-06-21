@@ -1,7 +1,7 @@
 From 116d99d9f45c30d3b1c80b54fed8bf406aa590f7 Mon Sep 17 00:00:00 2001
 From: Matthieu Crapet <mcrapet@gmail.com>
 Date: Sat, 19 Jun 2010 16:56:48 +0200
-Subject: [PATCH 14/16] ts7200_nor_flash
+Subject: [PATCH 14/18] ts7200_nor_flash
 
 Deal with 8mb or 16mb NOR Flash (TS-7200 only)
 ---

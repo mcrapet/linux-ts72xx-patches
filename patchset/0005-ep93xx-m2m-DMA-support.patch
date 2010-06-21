@@ -1,7 +1,7 @@
 From 62a8847f18ac66120bf1dc07a497a4d74e099036 Mon Sep 17 00:00:00 2001
 From: Matthieu Crapet <mcrapet@gmail.com>
 Date: Thu, 10 Jun 2010 16:40:16 +0200
-Subject: [PATCH 05/16] ep93xx: m2m DMA support
+Subject: [PATCH 05/18] ep93xx: m2m DMA support
 
 ---
  arch/arm/mach-ep93xx/Makefile           |    2 +-

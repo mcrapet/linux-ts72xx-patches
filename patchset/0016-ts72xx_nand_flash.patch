@@ -1,7 +1,7 @@
 From 45a115b858cf82a35e51a7541a3f83c4dd4e08ea Mon Sep 17 00:00:00 2001
 From: Matthieu Crapet <mcrapet@gmail.com>
 Date: Sun, 20 Jun 2010 11:31:22 +0200
-Subject: [PATCH 16/16] ts72xx_nand_flash
+Subject: [PATCH 16/18] ts72xx_nand_flash
 
 This is Hartley Sweeten's patch:
 Update the ts72xx platform's nand driver support.

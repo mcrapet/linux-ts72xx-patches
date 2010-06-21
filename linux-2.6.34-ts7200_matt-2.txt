@@ -1,4 +1,4 @@
-Release notes about "linux-2.6.34-ts7200_matt-1" patch
+Release notes about "linux-2.6.34-ts7200_matt-2" patch
 This is mainly created for EP9301 & EP9302 CPUs and more especially for TS-7200, TS-7250 & TS-7260
 SBCs manufactured by Technologic Systems (http://www.embeddedarm.com).
 
@@ -27,13 +27,18 @@ Patches droppped from linux-2.6.32.3-ts7200_matt-5:
 - 0015-ep93xx_cpufreq.patch (only worked for ep9301, badd because it doesn't use clk stuff)
 
 Incoming mainline stuff:
-- use NAND platform driver (and drop NAND specific driver ts7250.c). is included in 2.6.35-rc1)
+- use NAND platform driver (and drop NAND specific driver ts7250.c). Included in 2.6.35-rc1
+- spi master driver (written by Mika Westerberg)
 - register the pwm devices on the ts72xx dev boards (pending, no news)
 
 Troubleshootings
 ----------------
 - For potential memory problems (we use sparse memory model), try adding some params to the kernel command:
 mem=8M@0x0 mem=8M@16M mem=8M@64M mem=8M@80M
+
+- If you have a 128mb NAND flash, you probably should patch "arch/arm/mach-ep93xx/ts72xx.c":
+  > -#define TS72XX_BOOTROM_PART_SIZE (SZ_16K)
+  > +#define TS72XX_BOOTROM_PART_SIZE (SZ_128K)
 
 Available 'defconfig'
 ---------------------
@@ -50,7 +55,7 @@ NFS client is included (I like nfsroot mount); drop it to save ~220kb.
   Built-in: rtc (ep93xx-rtc & rtc-m48t86), eth, ext4fs, nfs, mtd (nand)
   Modules : leds, pwm, max197, input keypad, TS-SER1, TS-ETH100, I2C, GPIO, tssdcard,
             watchdog (ep93xx_wdt & ts72xx_wdt), iptables, usb (+ hid + scsi related), jffs2, ubifs
-  No support for : pata, spi
+  No support for : spi, pata
 
 * ts7260_eabi_small: Basic config for TS-7260 sbc.
   The same as "ts7250_eabi_small" but tssdcard is built-in.
@@ -59,7 +64,7 @@ NFS client is included (I like nfsroot mount); drop it to save ~220kb.
   Built-in: rtc (ep93xx-rtc & rtc-m48t86), eth, ext4fs, nfs
   Modules : leds, pwm, max197, input keypad, TS-SER1, TS-ETH100, I2C, GPIO, tssdcard,
             watchdog (ep93xx_wdt & ts72xx_wdt), iptables, usb (+ hid + scsi related)
-  No support for : pata, spi, mtd
+  No support for : spi, pata, mtd
 
 
 Short version
@@ -70,6 +75,7 @@ Short version
   - Ethernet
   - RTC (no backed up RAM)
   - I2C (based on gpio)
+  - SPI (master driver)
   - USB 2.0
   - Leds (red and green)
   - PWM
@@ -84,6 +90,7 @@ Short version
   - NOR and NAND flash support
   - /proc/driver/sbcinfo : some infos about TS-72XX sbc
   - Input matrix keypad driver (DIO header)
+  - TMP124 spi slave driver
 
   PC/104 peripherals
   -----------------
@@ -283,6 +290,14 @@ $ INSTALL_MOD_PATH=/your-path-to/nfsroot make modules_install
        254        0     495488 tssda
        254        1     495400 tssda1
 
+  # TMP124 spi slave driver (module named tmp124.ko). This an "3-wire SPI" device (miso and mosi shares the same pin).
+    As ep93xx driver does not support it, it's only read only (read sensor).
+    One entry is exported in sysfs. Chip select pin is FGPIO[2] (EP93XX_GPIO_LINE_MCCD2).
+
+    $ cat /sys/bus/spi/devices/spi0.0/temperature
+    28.56
+
+
   PC/104 peripherals
   -----------------
 
@@ -314,6 +329,11 @@ $ INSTALL_MOD_PATH=/your-path-to/nfsroot make modules_install
 
 ChangeLog
 =========
+linux-2.6.34-ts7200_matt-2 (2010.jun.22)
+
+	* ep93xx_spi: spi master driver from Mika Westerberg)
+	* ts72xx_spi_tmp124: 3-wire spi temperature sensor
+
 linux-2.6.34-ts7200_matt-1 (2010.jun.20)
 
 	* ts72xx_base: some cleanup in ts72xx.h (added TS-7260 defines, ...)

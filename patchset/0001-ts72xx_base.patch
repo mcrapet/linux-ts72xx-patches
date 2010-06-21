@@ -1,7 +1,7 @@
 From 9a60df856b54ba2f09dc0bbe4229627372f0a122 Mon Sep 17 00:00:00 2001
 From: Matthieu Crapet <mcrapet@gmail.com>
 Date: Thu, 10 Jun 2010 10:43:24 +0200
-Subject: [PATCH 01/16] ts72xx_base
+Subject: [PATCH 01/18] ts72xx_base
 
 - patch: allow to force nF bit in control reg
 - register pwm1

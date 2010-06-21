@@ -1,7 +1,7 @@
 From 453060da6afa4c32d2e2704e69ad32f200d4d240 Mon Sep 17 00:00:00 2001
 From: Matthieu Crapet <mcrapet@gmail.com>
 Date: Thu, 10 Jun 2010 10:51:39 +0200
-Subject: [PATCH 02/16] ts72xx_force_machine-id
+Subject: [PATCH 02/18] ts72xx_force_machine-id
 
 ---
  arch/arm/kernel/head.S       |    3 +++
