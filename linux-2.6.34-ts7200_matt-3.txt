@@ -1,4 +1,4 @@
-Release notes about "linux-2.6.34-ts7200_matt-2" patch
+Release notes about "linux-2.6.34-ts7200_matt-3" patch
 This is mainly created for EP9301 & EP9302 CPUs and more especially for TS-7200, TS-7250 & TS-7260
 SBCs manufactured by Technologic Systems (http://www.embeddedarm.com).
 
@@ -94,10 +94,11 @@ Short version
 
   PC/104 peripherals
   -----------------
-  - TS-SER1 support [/dev/ttyS0]
-  - TS-9600: PATA support
   - TS-5620 (RTC daughterboard for TS-7200) support
+  - TS-9600: PATA support
+  - TS-DIO24 support [via /sys/class/gpio/]
   - TS-ETH100 support
+  - TS-SER1 support [/dev/ttyS0]
 
 
 Long version
@@ -273,6 +274,7 @@ $ INSTALL_MOD_PATH=/your-path-to/nfsroot make modules_install
     $ echo 2 >average             // two samples are acquired for one request
 
   # SD Card support (for TS-7260). Module name is "ts72xx_sdcard.ko", it's a standalone block device driver.
+    Don't compile it if your TS-7260 has not the onbard option: OP-SDSOCKET.
 
     # modprobe ts72xx_sdcard
     ts72xx-sdcard ts72xx-sdcard.0: SD card hardware revision: 00000000
@@ -326,9 +328,61 @@ $ INSTALL_MOD_PATH=/your-path-to/nfsroot make modules_install
     # insmod ax88796_ts_eth100.ko 
     ax88796 ax88796.0: 16bit, irq 33, c606e200, MAC: 94:6a:94:6a:94:6a
 
+  # TS-DIO24. Use regular gpiolib mecanism. Can't be compiled as module because
+    it uses interrupt stuff (set_irq_chip, ..). So buildin with kernel only.
+    Board setup code must specify peripheral I/O address (JP1 and JP2)
+    (see arch/arm/mach-ep93xx/ts72xx.c)
+
+    Session example 1 (if compiled with CONFIG_DEBUG_FS support)
+    $ mount -t debugfs none /sys/kernel/debug/
+    $ cat /sys/kernel/debug/gpio 
+    ...
+    GPIOs 100-123, ts72xx-dio24.100:
+     A0 gpio-100 (            ) out hi
+     A1 gpio-101 (            ) out hi
+     ...
+     C6 gpio-122 (            ) in  hi
+     C7 gpio-123 (            ) in  hi
+
+    Session example 2 (set C7 io as output)
+    $ cd /sys/class/gpio/
+    $ echo 123 > export
+    $ cd gpio123
+    $ echo out > direction
+    $ echo 1 > value              | $ echo 0 > value
+    $ cat value                   | $ cat value
+    1                             | 0
+    $ cd ..
+    $ echo 123 > unexport
+
+    Session example 3 (use C2 as interrupt)
+    $ cd /sys/class/gpio/
+    $ echo 118 > export
+    $ cd gpio118
+    $ echo in > direction
+    $ cat value                   | $ cat value
+    0                             | 1
+    $ echo rising > edge          | $ echo falling > edge
+    $                             | $
+
+    Warning: keeping C2 to high (when edge=rising): will freeze system until C2 is set to low.
+             keeping C2 to low (when edge=falling): will freeze system until C2 is set to high.
+             Signal must be a pulse. Is it a normal behavior ?
+
+    $ cat /proc/interrupts
+     ...
+     89:         16  ts72xx-dio24.100  gpiolib
+     ...
+    $ echo none > edge 
+
 
 ChangeLog
 =========
+linux-2.6.34-ts7200_matt-3 (2010.nov.14)
+
+	* ts72xx_ts_dio24: new driver for TS-DIO24 PC/104 peripheral
+	* ts72xx_ts_ser4: new driver for TS-SER4 PC/104 peripheral written by Neboj¨a Cosic
+
 linux-2.6.34-ts7200_matt-2 (2010.jun.22)
 
 	* ep93xx_spi: spi master driver from Mika Westerberg)
