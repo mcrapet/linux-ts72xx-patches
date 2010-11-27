@@ -49,6 +49,9 @@
  drivers/net/arm/ep93xx_eth.c                    |  346 +++-
  drivers/net/ax88796.c                           |    8 +-
  drivers/net/ax88796_ts_eth100.c                 |  190 ++
+ drivers/power/Kconfig                           |    6 +
+ drivers/power/Makefile                          |    1 +
+ drivers/power/ts7260_power.c                    |  352 ++++
  drivers/serial/8250_ts_ser1.c                   |  197 ++
  drivers/serial/8250_ts_ser4.c                   |  196 ++
  drivers/serial/Kconfig                          |   57 +
@@ -58,7 +61,7 @@
  drivers/spi/Makefile                            |    2 +
  drivers/spi/ep93xx_spi.c                        |  938 +++++++++
  drivers/spi/tmp124.c                            |  158 ++
- 60 files changed, 8622 insertions(+), 164 deletions(-)
+ 63 files changed, 8981 insertions(+), 164 deletions(-)
 
 diff --git a/Documentation/spi/ep93xx_spi b/Documentation/spi/ep93xx_spi
 new file mode 100644
@@ -8132,6 +8135,393 @@ index 0000000..448b3e3
 +MODULE_DESCRIPTION("Asix 88796 ethernet probe module for TS-ETH100 (TS-72xx)");
 +MODULE_LICENSE("GPL");
 +MODULE_VERSION("0.21");
+diff --git a/drivers/power/Kconfig b/drivers/power/Kconfig
+index faaa9b4..f47998d 100644
+--- a/drivers/power/Kconfig
++++ b/drivers/power/Kconfig
+@@ -36,6 +36,12 @@ config MAX8925_POWER
+ 	  Say Y here to enable support for the battery charger in the Maxim
+ 	  MAX8925 PMIC.
+ 
++config TS7260_POWER
++	tristate "TS-7260 power driver"
++	depends on MACH_TS72XX
++	help
++	  Say Y here if you want to have access to TS-7260 power management (8-bit) register.
++
+ config WM831X_BACKUP
+ 	tristate "WM831X backup battery charger support"
+ 	depends on MFD_WM831X
+diff --git a/drivers/power/Makefile b/drivers/power/Makefile
+index a2ba7c8..7ed448f 100644
+--- a/drivers/power/Makefile
++++ b/drivers/power/Makefile
+@@ -17,6 +17,7 @@ obj-$(CONFIG_POWER_SUPPLY)	+= power_supply.o
+ obj-$(CONFIG_PDA_POWER)		+= pda_power.o
+ obj-$(CONFIG_APM_POWER)		+= apm_power.o
+ obj-$(CONFIG_MAX8925_POWER)	+= max8925_power.o
++obj-$(CONFIG_TS7260_POWER)	+= ts7260_power.o
+ obj-$(CONFIG_WM831X_BACKUP)	+= wm831x_backup.o
+ obj-$(CONFIG_WM831X_POWER)	+= wm831x_power.o
+ obj-$(CONFIG_WM8350_POWER)	+= wm8350_power.o
+diff --git a/drivers/power/ts7260_power.c b/drivers/power/ts7260_power.c
+new file mode 100644
+index 0000000..b263f9d
+--- /dev/null
++++ b/drivers/power/ts7260_power.c
+@@ -0,0 +1,352 @@
++/*
++ * Technologic Systems TS-7260 "power management" support.
++ *
++ * Copyright (C) 2010 Matthieu Crapet <mcrapet@gmail.com>
++ * Based on pcf50633-charger.c by Balaji Rao.
++ *
++ * This program is free software: you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License as published by
++ * the Free Software Foundation, either version 3 of the License, or
++ * (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program.  If not, see <http://www.gnu.org/licenses/>.
++ *
++ * On TS-7260, power management is controlled through a single 8-bit register.
++ */
++
++#include <linux/kernel.h>
++#include <linux/module.h>
++#include <linux/err.h>
++#include <linux/slab.h>
++#include <linux/init.h>
++#include <linux/io.h>
++#include <linux/device.h>
++#include <linux/sysfs.h>
++#include <linux/platform_device.h>
++#include <linux/power_supply.h>
++
++#include <mach/hardware.h>
++#include <mach/ts72xx.h>
++
++struct ts7260_pm {
++	struct platform_device	*pdev;
++	struct power_supply	adapter;
++	void __iomem		*reg_base;
++};
++
++struct platform_device *ts_pdev; /* required by ts7260pm_exit */
++
++
++static inline void ts7260pm_write(struct ts7260_pm *tspm, unsigned char val)
++{
++	__raw_writeb(val, tspm->reg_base);
++}
++
++static inline unsigned char ts7260pm_read(struct ts7260_pm *tspm)
++{
++	return __raw_readb(tspm->reg_base);
++}
++
++
++/*
++ * /sys/class/power_supply/adapter/device
++ *   /lcd_header_power    LCD header 5V power
++ *   /pc104_clock         PC/104 clock enabled
++ *   /pc104_fast_strobes  PC/104 fast strobes enabled
++ *   /rs232_power         RS232 level converter power
++ *   /scratch             Scratch bit (retains state during reboots)
++ *   /usb_power           USB 5V power
++ */
++
++static ssize_t show_pm_bit0(struct device *dev, struct device_attribute *attr,
++		char *buf)
++{
++	struct ts7260_pm *tspm = dev_get_drvdata(dev);
++	unsigned char reg = ts7260pm_read(tspm);
++	return sprintf(buf, "%u\n", !!(reg & TS7260_PM_RS232_LEVEL_CONVERTER));
++}
++
++static ssize_t store_pm_bit0(struct device *dev, struct device_attribute *attr,
++		const char *buf, size_t count)
++{
++	struct ts7260_pm *tspm = dev_get_drvdata(dev);
++	unsigned long val;
++	unsigned char reg = TS7260_PM_RS232_LEVEL_CONVERTER;
++
++	if (strict_strtoul(buf, 10, &val))
++		return -EINVAL;
++
++	if (val)
++		reg |= ts7260pm_read(tspm);
++	else
++		reg = (~reg) & ts7260pm_read(tspm);
++
++	ts7260pm_write(tspm, reg);
++	return count;
++}
++
++static ssize_t show_pm_bit1(struct device *dev, struct device_attribute *attr,
++		char *buf)
++{
++	struct ts7260_pm *tspm = dev_get_drvdata(dev);
++	unsigned char reg = ts7260pm_read(tspm);
++	return sprintf(buf, "%u\n", !!(reg & TS7260_PM_USB));
++}
++
++static ssize_t store_pm_bit1(struct device *dev, struct device_attribute *attr,
++		const char *buf, size_t count)
++{
++	struct ts7260_pm *tspm = dev_get_drvdata(dev);
++	unsigned long val;
++	unsigned char reg = TS7260_PM_USB;
++
++	if (strict_strtoul(buf, 10, &val))
++		return -EINVAL;
++
++	if (val)
++		reg |= ts7260pm_read(tspm);
++	else
++		reg = (~reg) & ts7260pm_read(tspm);
++
++	ts7260pm_write(tspm, reg);
++	return count;
++}
++
++static ssize_t show_pm_bit2(struct device *dev, struct device_attribute *attr,
++		char *buf)
++{
++	struct ts7260_pm *tspm = dev_get_drvdata(dev);
++	unsigned char reg = ts7260pm_read(tspm);
++	return sprintf(buf, "%u\n", !!(reg & TS7260_PM_LCD));
++}
++
++static ssize_t store_pm_bit2(struct device *dev, struct device_attribute *attr,
++		const char *buf, size_t count)
++{
++	struct ts7260_pm *tspm = dev_get_drvdata(dev);
++	unsigned long val;
++	unsigned char reg = TS7260_PM_LCD;
++
++	if (strict_strtoul(buf, 10, &val))
++		return -EINVAL;
++
++	if (val)
++		reg |= ts7260pm_read(tspm);
++	else
++		reg = (~reg) & ts7260pm_read(tspm);
++
++	ts7260pm_write(tspm, reg);
++	return count;
++}
++
++static ssize_t show_pm_bit4(struct device *dev, struct device_attribute *attr,
++		char *buf)
++{
++	struct ts7260_pm *tspm = dev_get_drvdata(dev);
++	unsigned char reg = ts7260pm_read(tspm);
++	return sprintf(buf, "%u\n", !(reg & TS7260_PM_PC104_CLOCK));
++}
++
++static ssize_t store_pm_bit4(struct device *dev, struct device_attribute *attr,
++		const char *buf, size_t count)
++{
++	struct ts7260_pm *tspm = dev_get_drvdata(dev);
++	unsigned long val;
++	unsigned char reg = TS7260_PM_PC104_CLOCK;
++
++	if (strict_strtoul(buf, 10, &val))
++		return -EINVAL;
++
++	/* logic inverted (bit4=1 means clock disabled) */
++	if (val)
++		reg = (~reg) & ts7260pm_read(tspm);
++	else
++		reg |= ts7260pm_read(tspm);
++
++	ts7260pm_write(tspm, reg);
++	return count;
++}
++
++static ssize_t show_pm_bit5(struct device *dev, struct device_attribute *attr,
++		char *buf)
++{
++	struct ts7260_pm *tspm = dev_get_drvdata(dev);
++	unsigned char reg = ts7260pm_read(tspm);
++	return sprintf(buf, "%u\n", !!(reg & TS7260_PM_PC104_FAST_STROBES));
++}
++
++static ssize_t store_pm_bit5(struct device *dev, struct device_attribute *attr,
++		const char *buf, size_t count)
++{
++	struct ts7260_pm *tspm = dev_get_drvdata(dev);
++	unsigned long val;
++	unsigned char reg = TS7260_PM_PC104_FAST_STROBES;
++
++	if (strict_strtoul(buf, 10, &val))
++		return -EINVAL;
++
++	if (val)
++		reg |= ts7260pm_read(tspm);
++	else
++		reg = (~reg) & ts7260pm_read(tspm);
++
++	ts7260pm_write(tspm, reg);
++	return count;
++}
++
++static ssize_t show_pm_bit7(struct device *dev, struct device_attribute *attr,
++		char *buf)
++{
++	struct ts7260_pm *tspm = dev_get_drvdata(dev);
++	unsigned char reg = ts7260pm_read(tspm);
++	return sprintf(buf, "%u\n", !!(reg & TS7260_PM_SCRATCH_BIT));
++}
++
++static ssize_t store_pm_bit7(struct device *dev, struct device_attribute *attr,
++		const char *buf, size_t count)
++{
++	struct ts7260_pm *tspm = dev_get_drvdata(dev);
++	unsigned long val;
++	unsigned char reg = TS7260_PM_SCRATCH_BIT;
++
++	if (strict_strtoul(buf, 10, &val))
++		return -EINVAL;
++
++	if (val)
++		reg |= ts7260pm_read(tspm);
++	else
++		reg = (~reg) & ts7260pm_read(tspm);
++
++	ts7260pm_write(tspm, reg);
++	return count;
++}
++
++static DEVICE_ATTR(rs232_power, S_IRUGO | S_IWUSR, show_pm_bit0, store_pm_bit0);
++static DEVICE_ATTR(usb_power, S_IRUGO | S_IWUSR, show_pm_bit1, store_pm_bit1);
++static DEVICE_ATTR(lcd_header_power, S_IRUGO | S_IWUSR, show_pm_bit2, store_pm_bit2);
++static DEVICE_ATTR(pc104_clock, S_IRUGO | S_IWUSR, show_pm_bit4, store_pm_bit4);
++static DEVICE_ATTR(pc104_fast_strobes, S_IRUGO | S_IWUSR, show_pm_bit5, store_pm_bit5);
++static DEVICE_ATTR(scratch, S_IRUGO | S_IWUSR, show_pm_bit7, store_pm_bit7);
++
++static struct attribute *ts7260pm_sysfs_entries[] = {
++	&dev_attr_rs232_power.attr,
++	&dev_attr_usb_power.attr,
++	&dev_attr_lcd_header_power.attr,
++	&dev_attr_pc104_clock.attr,
++	&dev_attr_pc104_fast_strobes.attr,
++	&dev_attr_scratch.attr,
++	NULL,
++};
++
++static struct attribute_group ts7260pm_attr_group = {
++	.name	= NULL,			/* put in device directory */
++	.attrs	= ts7260pm_sysfs_entries,
++};
++
++
++/* Power supply class related */
++
++static int adapter_get_property(struct power_supply *psy,
++		enum power_supply_property psp, union power_supply_propval *val)
++{
++	int ret = 0;
++
++	switch (psp) {
++		case POWER_SUPPLY_PROP_ONLINE:
++			val->intval =  1; /* TS-7260 is alive! */
++			break;
++		default:
++			ret = -EINVAL;
++			break;
++	}
++	return ret;
++}
++
++static enum power_supply_property power_props[] = {
++	POWER_SUPPLY_PROP_ONLINE,
++};
++
++static int __init ts7260pm_init(void)
++{
++	struct ts7260_pm *tspm;
++	int ret;
++
++	if (!board_is_ts7260())
++		return -ENODEV;
++
++	ts_pdev = platform_device_register_simple("ts7260-pm", 0, NULL, 0);
++	if (IS_ERR(ts_pdev))
++		return PTR_ERR(ts_pdev);
++
++	tspm = kzalloc(sizeof(*tspm), GFP_KERNEL);
++	if (!tspm) {
++		ret = -ENOMEM;
++		goto kzalloc_failed;
++	}
++
++	tspm->pdev = ts_pdev;
++	platform_set_drvdata(ts_pdev, tspm);
++
++	tspm->reg_base = ioremap(TS7260_POWER_MANAGEMENT_PHYS_BASE, SZ_1K);
++	if (!tspm->reg_base) {
++		ret = -ENXIO;
++		goto ioremap_failed;
++	}
++
++	/* Create (symbolic) power supply */
++	tspm->adapter.name		= "adapter";
++	tspm->adapter.type		= POWER_SUPPLY_TYPE_MAINS;
++	tspm->adapter.properties	= power_props;
++	tspm->adapter.num_properties	= ARRAY_SIZE(power_props);
++	tspm->adapter.get_property	= adapter_get_property;
++
++	ret = power_supply_register(&tspm->pdev->dev, &tspm->adapter);
++	if (ret) {
++		dev_err(&tspm->pdev->dev, "failed to register adapter\n");
++		goto adapter_failed;
++	}
++
++	/* Create sysfs files */
++	ret = sysfs_create_group(&tspm->pdev->dev.kobj, &ts7260pm_attr_group);
++	if (ret) {
++		dev_err(&tspm->pdev->dev, "failed to create sysfs entries\n");
++		goto sysfs_creation_failed;
++	}
++
++	goto success;
++
++sysfs_creation_failed:
++	power_supply_unregister(&tspm->adapter);
++adapter_failed:
++	iounmap(tspm->reg_base);
++ioremap_failed:
++	kfree(tspm);
++kzalloc_failed:
++	platform_device_unregister(ts_pdev);
++success:
++	return ret;
++}
++
++static void __exit ts7260pm_exit(void)
++{
++	struct ts7260_pm *tspm = platform_get_drvdata(ts_pdev);
++
++	/* sysfs files will be automatically destroyed */
++	power_supply_unregister(&tspm->adapter);
++	iounmap(tspm->reg_base);
++	kfree(tspm);
++	platform_device_unregister(ts_pdev);
++}
++
++module_init(ts7260pm_init);
++module_exit(ts7260pm_exit);
++
++MODULE_AUTHOR("Matthieu Crapet <mcrapet@gmail.com>");
++MODULE_DESCRIPTION("TS-7260 power management driver");
++MODULE_LICENSE("GPL");
 diff --git a/drivers/serial/8250_ts_ser1.c b/drivers/serial/8250_ts_ser1.c
 new file mode 100644
 index 0000000..e5fe616

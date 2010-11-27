@@ -1,4 +1,4 @@
-Release notes about "linux-2.6.34-ts7200_matt-3" patch
+Release notes about "linux-2.6.34-ts7200_matt-4" patch
 This is mainly created for EP9301 & EP9302 CPUs and more especially for TS-7200, TS-7250 & TS-7260
 SBCs manufactured by Technologic Systems (http://www.embeddedarm.com).
 
@@ -9,6 +9,10 @@ You can find their submitted patches here:
 [Hartley Sweeten]   http://www.arm.linux.org.uk/developer/patches/search.php?uid=1443
 [Ryan Mallon]       http://www.arm.linux.org.uk/developer/patches/search.php?uid=1556
 [Lennert Buytenhek] http://www.arm.linux.org.uk/developer/patches/search.php?uid=535
+
+You'll be able to find some good information here:
+https://code.google.com/p/sim1/
+
 
 News
 ====
@@ -24,7 +28,7 @@ Patches droppped from linux-2.6.32.3-ts7200_matt-5:
 - 0009-ts7200_cf_ide.patch (legacy IDE layer is deprecated, use PATA)
 - 0011-ep93xx_pm.patch (it was just a basic attempt, should be reworked)
 - 0014-ep93xx_spi.patch (a new driver is pending in mainline, wait a little)
-- 0015-ep93xx_cpufreq.patch (only worked for ep9301, badd because it doesn't use clk stuff)
+- 0015-ep93xx_cpufreq.patch (only worked for ep9301, wrong because it didn't use clk interface)
 
 Incoming mainline stuff:
 - use NAND platform driver (and drop NAND specific driver ts7250.c). Included in 2.6.35-rc1
@@ -91,6 +95,7 @@ Short version
   - /proc/driver/sbcinfo : some infos about TS-72XX sbc
   - Input matrix keypad driver (DIO header)
   - TMP124 spi slave driver
+  - Basic power supply class support (TS-7260 only)
 
   PC/104 peripherals
   -----------------
@@ -299,6 +304,23 @@ $ INSTALL_MOD_PATH=/your-path-to/nfsroot make modules_install
     $ cat /sys/bus/spi/devices/spi0.0/temperature
     28.56
 
+  # Basic power supply class support. Not very useful in fact :(
+    Allow to modify "Power Management Register" (0x1200_0000) of TS-7260.
+
+    # cat /sys/class/power_supply/adapter/device/usb_power 
+    1
+    # echo 0 >/sys/class/power_supply/adapter/device/usb_power 
+      // does nothing if no USB device is plugged
+    # cat /sys/class/power_supply/adapter/device/lcd_header_power
+    1
+    # echo 0 >/sys/class/power_supply/adapter/device/lcd_header_power 
+      // does nothing if LCD header is unused
+    # echo 0 >/sys/class/power_supply/adapter/device/rs232_power      
+      // will blow-up your minicom (console) but saves nearly 10mA
+    # cat /sys/class/power_supply/adapter/device/pc104_clock 
+    1
+    # cat /sys/class/power_supply/adapter/device/pc104_fast_strobes 
+    0
 
   PC/104 peripherals
   -----------------
@@ -378,6 +400,10 @@ $ INSTALL_MOD_PATH=/your-path-to/nfsroot make modules_install
 
 ChangeLog
 =========
+linux-2.6.34-ts7200_matt-4 (2010.nov.28)
+
+	* ts7260_power: new driver for dealing with PM register of TS-7260
+
 linux-2.6.34-ts7200_matt-3 (2010.nov.14)
 
 	* ts72xx_ts_dio24: new driver for TS-DIO24 PC/104 peripheral
