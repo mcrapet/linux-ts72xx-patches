@@ -1,17 +1,17 @@
-From 0122c23fbf54ae4d03f89e08077e754c0a4d7218 Mon Sep 17 00:00:00 2001
+From 7cce65b26ab324a433b827f6da1f59ac2b956216 Mon Sep 17 00:00:00 2001
 From: Matthieu Crapet <mcrapet@gmail.com>
 Date: Sun, 14 Nov 2010 16:18:13 +0100
-Subject: [PATCH] ts72xx_ts_dio24
+Subject: [PATCH 1/4] ts72xx_ts_dio24
 
 TS-DIO24 - 24 Digital Input/Output PC/104 peripheral
 ---
  arch/arm/mach-ep93xx/gpio.c              |   32 ++-
  arch/arm/mach-ep93xx/include/mach/gpio.h |    5 +-
- arch/arm/mach-ep93xx/ts72xx.c            |   21 ++
+ arch/arm/mach-ep93xx/ts72xx.c            |   26 ++
  drivers/gpio/Kconfig                     |    8 +
  drivers/gpio/Makefile                    |    3 +-
  drivers/gpio/ts-dio24.c                  |  440 ++++++++++++++++++++++++++++++
- 6 files changed, 493 insertions(+), 16 deletions(-)
+ 6 files changed, 498 insertions(+), 16 deletions(-)
  create mode 100644 drivers/gpio/ts-dio24.c
 
 diff --git a/arch/arm/mach-ep93xx/gpio.c b/arch/arm/mach-ep93xx/gpio.c
@@ -166,15 +166,16 @@ index c991b14..c208527 100644
  
  #endif
 diff --git a/arch/arm/mach-ep93xx/ts72xx.c b/arch/arm/mach-ep93xx/ts72xx.c
-index bf3a666..fd0efe7 100644
+index bf3a666..f92bf6c 100644
 --- a/arch/arm/mach-ep93xx/ts72xx.c
 +++ b/arch/arm/mach-ep93xx/ts72xx.c
-@@ -273,6 +273,26 @@ static void __init ts72xx_register_sdcard(void)
+@@ -273,6 +273,28 @@ static void __init ts72xx_register_sdcard(void)
  }
  
  /*************************************************************************
 + * TS-DIO24 (PC/104 extension board)
 + *************************************************************************/
++#if defined(CONFIG_GPIO_TS_DIO24)
 +
 +/* I/O address is selected with JP1 & JP2. Can be 0x100, 0x108, 0x110 or 0x118. */
 +#define TS_DIO24_ADDRESS	0x100
@@ -191,19 +192,23 @@ index bf3a666..fd0efe7 100644
 +	.num_resources	= 1,
 +	.resource	= &ts72xx_dio24_resource,
 +};
++#endif
 +
 +/*************************************************************************
   * RTC
   *************************************************************************/
  static unsigned char ts72xx_rtc_readbyte(unsigned long addr)
-@@ -430,6 +450,7 @@ static void __init ts72xx_init_machine(void)
- 	ts72xx_register_sdcard();
+@@ -431,6 +453,10 @@ static void __init ts72xx_init_machine(void)
  	platform_device_register(&ts72xx_rtc_device);
  	platform_device_register(&ts72xx_wdt_device);
-+	platform_device_register(&ts72xx_dio24);
  
++	#if defined(CONFIG_GPIO_TS_DIO24)
++	platform_device_register(&ts72xx_dio24);
++	#endif
++
  	ep93xx_register_eth(&ts72xx_eth_data, 1);
  	ep93xx_register_i2c(&ts72xx_i2c_gpio_data,
+ 			ts72xx_i2c_board_info,
 diff --git a/drivers/gpio/Kconfig b/drivers/gpio/Kconfig
 index fee678f..19ad2d7 100644
 --- a/drivers/gpio/Kconfig

@@ -1,0 +1,131 @@
+From f29e2a288e0283dfe4b6ab2c3863c0928dca600f Mon Sep 17 00:00:00 2001
+From: Matthieu Crapet <mcrapet@gmail.com>
+Date: Sun, 5 Dec 2010 14:06:12 +0100
+Subject: [PATCH] rtc-m48t86-nvram
+
+Add /sys/devices/platform/rtc-m48t86/nvram file (114 bytes).
+---
+ drivers/rtc/Kconfig      |    6 ++++
+ drivers/rtc/rtc-m48t86.c |   61 ++++++++++++++++++++++++++++++++++++++++++++++
+ 2 files changed, 67 insertions(+), 0 deletions(-)
+
+diff --git a/drivers/rtc/Kconfig b/drivers/rtc/Kconfig
+index 6a13037..673b5e3 100644
+--- a/drivers/rtc/Kconfig
++++ b/drivers/rtc/Kconfig
+@@ -507,6 +507,12 @@ config RTC_DRV_M48T86
+ 	  This driver can also be built as a module. If so, the module
+ 	  will be called rtc-m48t86.
+ 
++config RTC_DRV_M48T86_NVRAM
++	bool "Add NVRAM binfile in sysfs"
++	depends on RTC_DRV_M48T86
++	help
++	  Say Y here to have access to 114 extra free bytes of NVRAM.
++
+ config RTC_DRV_M48T35
+ 	tristate "ST M48T35"
+ 	help
+diff --git a/drivers/rtc/rtc-m48t86.c b/drivers/rtc/rtc-m48t86.c
+index 7c045cf..2b9c0fd 100644
+--- a/drivers/rtc/rtc-m48t86.c
++++ b/drivers/rtc/rtc-m48t86.c
+@@ -33,6 +33,7 @@
+ #define M48T86_REG_B		0x0B
+ #define M48T86_REG_C		0x0C
+ #define M48T86_REG_D		0x0D
++#define M48T86_REG_NVRAM	0x0E /* start offset of nvram (free use) */
+ 
+ #define M48T86_REG_B_H24	(1 << 1)
+ #define M48T86_REG_B_DM		(1 << 2)
+@@ -144,6 +145,50 @@ static const struct rtc_class_ops m48t86_rtc_ops = {
+ 	.proc		= m48t86_rtc_proc,
+ };
+ 
++#ifdef CONFIG_RTC_DRV_M48T86_NVRAM
++static ssize_t m48t86_nvram_read(struct kobject *kobj,
++				struct bin_attribute *bin_attr,
++				char *buf, loff_t pos, size_t size)
++{
++	struct device *dev = container_of(kobj, struct device, kobj);
++	struct platform_device *pdev = to_platform_device(dev);
++	struct m48t86_ops *ops = pdev->dev.platform_data;
++	ssize_t cnt = 0;
++
++	for (; size > 0 && pos < bin_attr->size; cnt++, size--) {
++		*buf++ = ops->readbyte(M48T86_REG_NVRAM + cnt);
++	}
++
++	return cnt;
++}
++
++static ssize_t m48t86_nvram_write(struct kobject *kobj,
++				struct bin_attribute *bin_attr,
++				char *buf, loff_t pos, size_t size)
++{
++	struct device *dev = container_of(kobj, struct device, kobj);
++	struct platform_device *pdev = to_platform_device(dev);
++	struct m48t86_ops *ops = pdev->dev.platform_data;
++	ssize_t cnt = 0;
++
++	for (; size > 0 && pos < bin_attr->size; cnt++, size--) {
++		ops->writebyte(*buf++, M48T86_REG_NVRAM + cnt);
++	}
++
++	return cnt;
++}
++
++static struct bin_attribute m48t86_nvram_attr = {
++	.attr = {
++		.name = "nvram",
++		.mode = S_IRUGO | S_IWUSR,
++	},
++	.read = m48t86_nvram_read,
++	.write = m48t86_nvram_write,
++	.size = 114,
++};
++#endif
++
+ static int __devinit m48t86_rtc_probe(struct platform_device *dev)
+ {
+ 	unsigned char reg;
+@@ -151,6 +196,10 @@ static int __devinit m48t86_rtc_probe(struct platform_device *dev)
+ 	struct rtc_device *rtc = rtc_device_register("m48t86",
+ 				&dev->dev, &m48t86_rtc_ops, THIS_MODULE);
+ 
++	#ifdef CONFIG_RTC_DRV_M48T86_NVRAM
++	int ret;
++	#endif
++
+ 	if (IS_ERR(rtc))
+ 		return PTR_ERR(rtc);
+ 
+@@ -161,6 +210,14 @@ static int __devinit m48t86_rtc_probe(struct platform_device *dev)
+ 	dev_info(&dev->dev, "battery %s\n",
+ 		(reg & M48T86_REG_D_VRT) ? "ok" : "exhausted");
+ 
++	#ifdef CONFIG_RTC_DRV_M48T86_NVRAM
++	ret = sysfs_create_bin_file(&dev->dev.kobj, &m48t86_nvram_attr);
++	if (ret) {
++		rtc_device_unregister(rtc);
++		return ret;
++	}
++	#endif
++
+ 	return 0;
+ }
+ 
+@@ -168,6 +225,10 @@ static int __devexit m48t86_rtc_remove(struct platform_device *dev)
+ {
+ 	struct rtc_device *rtc = platform_get_drvdata(dev);
+ 
++	#ifdef CONFIG_RTC_DRV_M48T86_NVRAM
++	sysfs_remove_bin_file(&dev->dev.kobj, &m48t86_nvram_attr);
++	#endif
++
+  	if (rtc)
+ 		rtc_device_unregister(rtc);
+ 
+-- 
+1.7.2.3
+

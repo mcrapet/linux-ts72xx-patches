@@ -1,4 +1,4 @@
-Release notes about "linux-2.6.34-ts7200_matt-4" patch
+Release notes about "linux-2.6.34-ts7200_matt-5" patch
 This is mainly created for EP9301 & EP9302 CPUs and more especially for TS-7200, TS-7250 & TS-7260
 SBCs manufactured by Technologic Systems (http://www.embeddedarm.com).
 
@@ -12,6 +12,7 @@ You can find their submitted patches here:
 
 You'll be able to find some good information here:
 https://code.google.com/p/sim1/
+https://github.com/ynezz/linux-2.6
 
 
 News
@@ -88,6 +89,7 @@ Short version
 
   TS-72xx SBCs
   ------------
+  - M48T86 RTC (backed up RAM)
   - Watchdog (CPLD of TS-7200)
   - PATA support: TS-7200 CF
   - Max197 option (platform driver)
@@ -206,6 +208,11 @@ $ INSTALL_MOD_PATH=/your-path-to/nfsroot make modules_install
 
   TS-72xx SBCs
   ------------
+
+  # M48T86 RTC (backed up RAM)
+    It can be /dev/rtc0 or /dev/rtc1 depending if you compile ep93xx-rtc or not.
+    If you compile with NVRAM support, you can access memory here:
+    /sys/devices/platform/rtc-m48t86/nvram
 
   # Compact flash (available on TS-7200 only) : PATA support
     # insmod pata_ts7200_cf.ko 
@@ -400,6 +407,11 @@ $ INSTALL_MOD_PATH=/your-path-to/nfsroot make modules_install
 
 ChangeLog
 =========
+linux-2.6.34-ts7200_matt-5 (2010.dec.05)
+
+	* rtc-m48t86-nvram: add sysfs access to NVRAM (114 free bytes!)
+	* ts72xx_ts_dio24: enclose with #ifdef in "arch/arm/mach-ep93xx/ts72xx.c"
+
 linux-2.6.34-ts7200_matt-4 (2010.nov.28)
 
 	* ts7260_power: new driver for dealing with PM register of TS-7260
