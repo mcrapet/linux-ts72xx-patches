@@ -1,23 +1,25 @@
-From c1515f196bfc70cad5f9a755bf0038f190fd8c22 Mon Sep 17 00:00:00 2001
+From 3ae1e2b8077c47adbd03545edac21827df03cbc4 Mon Sep 17 00:00:00 2001
 From: Matthieu Crapet <mcrapet@gmail.com>
 Date: Sat, 19 Jun 2010 14:44:32 +0200
 Subject: [PATCH 11/18] ts72xx_dio_keypad
 
 Depends of "matrix-keypad" driver.
 ---
- drivers/input/keyboard/Kconfig          |   30 ++++++++
- drivers/input/keyboard/Makefile         |    2 +
- drivers/input/keyboard/ts72xx_dio_3x4.c |  110 +++++++++++++++++++++++++++++
- drivers/input/keyboard/ts72xx_dio_4x4.c |  115 +++++++++++++++++++++++++++++++
- 4 files changed, 257 insertions(+), 0 deletions(-)
+ drivers/input/keyboard/Kconfig              |   42 ++++++++++
+ drivers/input/keyboard/Makefile             |    3 +
+ drivers/input/keyboard/ts72xx_dio_3x4.c     |  110 +++++++++++++++++++++++++
+ drivers/input/keyboard/ts72xx_dio_4x4.c     |  115 ++++++++++++++++++++++++++
+ drivers/input/keyboard/ts72xx_dio_4x4_alt.c |  119 +++++++++++++++++++++++++++
+ 5 files changed, 389 insertions(+), 0 deletions(-)
  create mode 100644 drivers/input/keyboard/ts72xx_dio_3x4.c
  create mode 100644 drivers/input/keyboard/ts72xx_dio_4x4.c
+ create mode 100644 drivers/input/keyboard/ts72xx_dio_4x4_alt.c
 
 diff --git a/drivers/input/keyboard/Kconfig b/drivers/input/keyboard/Kconfig
-index 64c1023..4ca7d48 100644
+index 64c1023..91eb1d8 100644
 --- a/drivers/input/keyboard/Kconfig
 +++ b/drivers/input/keyboard/Kconfig
-@@ -201,6 +201,36 @@ config KEYBOARD_MATRIX
+@@ -201,6 +201,48 @@ config KEYBOARD_MATRIX
  	  To compile this driver as a module, choose M here: the
  	  module will be called matrix_keypad.
  
@@ -47,6 +49,18 @@ index 64c1023..4ca7d48 100644
 +	  1 2 3 D
 +	  A 0 B C
 +
++config TS72XX_DIO_4X4_KEYPAD_ALT
++	tristate "TS-72xx 4x4 matrix keypad (alternate version)"
++	depends on MACH_TS72XX
++	help
++	  This a 16 keys (4 rows, 4 cols using DIO_0-7) keypad with the following layout:
++	  1 2 3 A
++	  4 5 6 B
++	  7 8 9 C
++	  * 0 # Enter
++	  
++	  Choose this if you purchased Technologic System's KPAD.
++
 +endchoice
 +
 +endif # KEYBOARD_MATRIX
@@ -55,18 +69,19 @@ index 64c1023..4ca7d48 100644
  	tristate "HP HIL keyboard support (simple driver)"
  	depends on GSC || HP300
 diff --git a/drivers/input/keyboard/Makefile b/drivers/input/keyboard/Makefile
-index 706c6b5..f81f1c1 100644
+index 706c6b5..83a1026 100644
 --- a/drivers/input/keyboard/Makefile
 +++ b/drivers/input/keyboard/Makefile
-@@ -40,3 +40,5 @@ obj-$(CONFIG_KEYBOARD_TOSA)		+= tosakbd.o
+@@ -40,3 +40,6 @@ obj-$(CONFIG_KEYBOARD_TOSA)		+= tosakbd.o
  obj-$(CONFIG_KEYBOARD_TWL4030)		+= twl4030_keypad.o
  obj-$(CONFIG_KEYBOARD_XTKBD)		+= xtkbd.o
  obj-$(CONFIG_KEYBOARD_W90P910)		+= w90p910_keypad.o
 +obj-$(CONFIG_TS72XX_DIO_3X4_KEYPAD)	+= ts72xx_dio_3x4.o
 +obj-$(CONFIG_TS72XX_DIO_4X4_KEYPAD)	+= ts72xx_dio_4x4.o
++obj-$(CONFIG_TS72XX_DIO_4X4_KEYPAD_ALT)	+= ts72xx_dio_4x4_alt.o
 diff --git a/drivers/input/keyboard/ts72xx_dio_3x4.c b/drivers/input/keyboard/ts72xx_dio_3x4.c
 new file mode 100644
-index 0000000..e214335
+index 0000000..7f01eff
 --- /dev/null
 +++ b/drivers/input/keyboard/ts72xx_dio_3x4.c
 @@ -0,0 +1,110 @@
@@ -140,7 +155,7 @@ index 0000000..e214335
 +	.debounce_ms		= 20,
 +	.wakeup			= 1,
 +	.active_low		= 1,
-+	//.no_autorep		= 1,
++	//.no_autorepeat		= 1,
 +};
 +
 +static void ts72xx_kbd_release(struct device *dev)
@@ -182,7 +197,7 @@ index 0000000..e214335
 +MODULE_LICENSE("GPL");
 diff --git a/drivers/input/keyboard/ts72xx_dio_4x4.c b/drivers/input/keyboard/ts72xx_dio_4x4.c
 new file mode 100644
-index 0000000..790abd5
+index 0000000..2c6f960
 --- /dev/null
 +++ b/drivers/input/keyboard/ts72xx_dio_4x4.c
 @@ -0,0 +1,115 @@
@@ -261,7 +276,132 @@ index 0000000..790abd5
 +	.debounce_ms		= 20,
 +	.wakeup			= 1,
 +	.active_low		= 1,
-+	//.no_autorep		= 1,
++	//.no_autorepeat		= 1,
++};
++
++static void ts72xx_kbd_release(struct device *dev)
++{
++}
++
++static struct platform_device ts72xx_kbd_device = {
++	.name		= "matrix-keypad",
++	.id		= -1,
++	.dev		= {
++		.platform_data	= &ts72xx_kbd_pdata,
++		.release	= ts72xx_kbd_release,
++	},
++};
++
++static int __init ts72xx_dio_init(void)
++{
++	int i;
++
++	for (i = 0; i < ARRAY_SIZE(ts72xx_kbd_row_gpios); i++) {
++		int irq = gpio_to_irq(ts72xx_kbd_row_gpios[i]);
++
++		ep93xx_gpio_int_debounce(irq, 1);
++	}
++
++	return platform_device_register(&ts72xx_kbd_device);
++}
++
++static void __exit ts72xx_dio_exit(void)
++{
++	platform_device_unregister(&ts72xx_kbd_device);
++}
++
++module_init(ts72xx_dio_init);
++module_exit(ts72xx_dio_exit);
++
++MODULE_AUTHOR("Matthieu Crapet <mcrapet@gmail.com>");
++MODULE_DESCRIPTION("Platform device 4x4 keypad");
++MODULE_LICENSE("GPL");
+diff --git a/drivers/input/keyboard/ts72xx_dio_4x4_alt.c b/drivers/input/keyboard/ts72xx_dio_4x4_alt.c
+new file mode 100644
+index 0000000..e0e5042
+--- /dev/null
++++ b/drivers/input/keyboard/ts72xx_dio_4x4_alt.c
+@@ -0,0 +1,119 @@
++/*
++ *  TS-72xx (4x4) keypad device driver for DIO1 header (DIO_0 thru DIO_7)
++ *
++ * (c) Copyright 2010  Matthieu Crapet <mcrapet@gmail.com>
++ *     modified to work with 4x4 keypad sold by TS for TS-7260
++ *        Anish Patel <anish.mailing.list@gmail.com>
++ *
++ * This program is free software; you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License as published by
++ * the Free Software Foundation; either version 2 of the License, or
++ * (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ */
++
++#include <linux/module.h>
++#include <linux/kernel.h>
++#include <linux/init.h>
++#include <linux/platform_device.h>
++#include <linux/input/matrix_keypad.h>
++#include <mach/gpio.h>
++
++static const uint32_t ts72xx_kbd_keymap[] = {
++	KEY(0, 0, KEY_1),
++	KEY(0, 1, KEY_2),
++	KEY(0, 2, KEY_3),
++	KEY(0, 3, KEY_A),
++
++	KEY(1, 0, KEY_4),
++	KEY(1, 1, KEY_5),
++	KEY(1, 2, KEY_6),
++	KEY(1, 3, KEY_B),
++
++	KEY(2, 0, KEY_7),
++	KEY(2, 1, KEY_8),
++	KEY(2, 2, KEY_9),
++	KEY(2, 3, KEY_C),
++
++	KEY(3, 0, KEY_NUMERIC_STAR),
++	KEY(3, 1, KEY_0),
++	KEY(3, 2, KEY_NUMERIC_POUND),
++	KEY(3, 3, KEY_ENTER),
++
++};
++
++static struct matrix_keymap_data ts72xx_kbd_keymap_data = {
++	.keymap		= ts72xx_kbd_keymap,
++	.keymap_size	= ARRAY_SIZE(ts72xx_kbd_keymap),
++};
++
++static const int ts72xx_kbd_row_gpios[] = {
++	EP93XX_GPIO_LINE_EGPIO8,
++	EP93XX_GPIO_LINE_EGPIO9,
++	EP93XX_GPIO_LINE_EGPIO10,
++	EP93XX_GPIO_LINE_EGPIO11,
++
++};
++
++static const int ts72xx_kbd_col_gpios[] = {
++	EP93XX_GPIO_LINE_EGPIO12,
++	EP93XX_GPIO_LINE_EGPIO13,
++	EP93XX_GPIO_LINE_EGPIO14,
++	EP93XX_GPIO_LINE_EGPIO15,
++};
++
++static struct matrix_keypad_platform_data ts72xx_kbd_pdata = {
++	.keymap_data		= &ts72xx_kbd_keymap_data,
++	.row_gpios		= ts72xx_kbd_row_gpios,
++	.col_gpios		= ts72xx_kbd_col_gpios,
++	.num_row_gpios		= ARRAY_SIZE(ts72xx_kbd_row_gpios),
++	.num_col_gpios		= ARRAY_SIZE(ts72xx_kbd_col_gpios),
++	.col_scan_delay_us	= 20,
++	.debounce_ms		= 20,
++	.wakeup			= 1,
++	.active_low		= 1,
++	//.no_autorepeat		= 1,
 +};
 +
 +static void ts72xx_kbd_release(struct device *dev)
@@ -302,5 +442,5 @@ index 0000000..790abd5
 +MODULE_DESCRIPTION("Platform device 4x4 keypad");
 +MODULE_LICENSE("GPL");
 -- 
-1.7.1
+1.7.2.3
 

@@ -1,4 +1,4 @@
-Release notes about "linux-2.6.34-ts7200_matt-5" patch
+Release notes about "linux-2.6.34-ts7200_matt-6" patch
 This is mainly created for EP9301 & EP9302 CPUs and more especially for TS-7200, TS-7250 & TS-7260
 SBCs manufactured by Technologic Systems (http://www.embeddedarm.com).
 
@@ -52,24 +52,23 @@ NFS client is included (I like nfsroot mount); drop it to save ~220kb.
 
 * ts7200_eabi_small: Basic config for TS-7200 sbc.
   Built-in: rtc (ep93xx-rtc & rtc-m48t86), eth, ext4fs, nfs, mtd (nor), pata (compact flash)
-  Modules : leds, pwm, max197, input keypad, TS-SER1, TS-ETH100, I2C, GPIO, TS-9600
+  Modules : leds, pwm, max197, input keypad, TS-SER1, TS-SER4, TS-ETH100, I2C, SPI, GPIO, TS-9600
             watchdog (ep93xx_wdt & ts72xx_wdt), iptables, usb (+ hid + scsi related)
-  No support for : spi
 
 * ts7250_eabi_small: Basic config for TS-7250 sbc.
   Built-in: rtc (ep93xx-rtc & rtc-m48t86), eth, ext4fs, nfs, mtd (nand)
-  Modules : leds, pwm, max197, input keypad, TS-SER1, TS-ETH100, I2C, GPIO, tssdcard,
+  Modules : leds, pwm, max197, input keypad, TS-SER1, TS-SER4, TS-ETH100, I2C, SPI, GPIO, tssdcard,
             watchdog (ep93xx_wdt & ts72xx_wdt), iptables, usb (+ hid + scsi related), jffs2, ubifs
-  No support for : spi, pata
+  No support for : pata
 
 * ts7260_eabi_small: Basic config for TS-7260 sbc.
   The same as "ts7250_eabi_small" but tssdcard is built-in.
 
 * ts72xx_eabi_small: Common basic config for all TS-72XX sbc.
   Built-in: rtc (ep93xx-rtc & rtc-m48t86), eth, ext4fs, nfs
-  Modules : leds, pwm, max197, input keypad, TS-SER1, TS-ETH100, I2C, GPIO, tssdcard,
+  Modules : leds, pwm, max197, input keypad, TS-SER1, TS-SER4, TS-ETH100, I2C, SPI, GPIO, tssdcard,
             watchdog (ep93xx_wdt & ts72xx_wdt), iptables, usb (+ hid + scsi related)
-  No support for : spi, pata, mtd
+  No support for : pata, mtd
 
 
 Short version
@@ -407,6 +406,12 @@ $ INSTALL_MOD_PATH=/your-path-to/nfsroot make modules_install
 
 ChangeLog
 =========
+linux-2.6.34-ts7200_matt-6 (2011.jan.08)
+
+	* ts72xx_dio_keypad: add a 4x4 variant. Thanks to Anish Patel.
+	* updated all configs (include SPI and lastest additions)
+	* updated yaffs2 patch
+
 linux-2.6.34-ts7200_matt-5 (2010.dec.05)
 
 	* rtc-m48t86-nvram: add sysfs access to NVRAM (114 free bytes!)

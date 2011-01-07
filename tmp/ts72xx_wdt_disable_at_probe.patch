@@ -1,0 +1,27 @@
+Subject	[PATCH] watchdog: ts72xx_wdt: disable watchdog at probe
+Date	Sun, 29 Aug 2010 13:53:14 +0300
+
+Since it may be already enabled by bootloader or some other utility. This patch
+makes sure that the watchdog is disabled before any userspace daemon opens the
+device. It is also required by the watchdog API.
+
+Signed-off-by: Mika Westerberg <mika.westerberg@iki.fi>
+---
+ drivers/watchdog/ts72xx_wdt.c |    3 +++
+ 1 files changed, 3 insertions(+), 0 deletions(-)
+diff --git a/drivers/watchdog/ts72xx_wdt.c b/drivers/watchdog/ts72xx_wdt.c
+index 458c499..18cdeb4 100644
+--- a/drivers/watchdog/ts72xx_wdt.c
++++ b/drivers/watchdog/ts72xx_wdt.c
+@@ -449,6 +449,9 @@ static __devinit int ts72xx_wdt_probe(struct platform_device *pdev)
+ 	wdt->pdev = pdev;
+ 	mutex_init(&wdt->lock);
+ 
++	/* make sure that the watchdog is disabled */
++	ts72xx_wdt_stop(wdt);
++
+ 	error = misc_register(&ts72xx_wdt_miscdev);
+ 	if (error) {
+ 		dev_err(&pdev->dev, "failed to register miscdev\n");
+-- 
+1.5.6.5
